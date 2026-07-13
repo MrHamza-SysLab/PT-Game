@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Persona Mirror</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0f1115;
+      }
+
+      #app {
+        width: 100%;
+        height: 100%;
+      }
+
+      #status {
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-family: Arial, sans-serif;
+        font-size: 13px;
+        color: #e7eefc;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 10;
+      }
+
+      #crosshair {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        width: 12px;
+        height: 12px;
+        transform: translate(-50%, -50%);
+        z-index: 13;
+        pointer-events: none;
+      }
+
+      #crosshair::before,
+      #crosshair::after {
+        content: "";
+        position: absolute;
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      #crosshair::before {
+        left: 5px;
+        top: 0;
+        width: 2px;
+        height: 12px;
+      }
+
+      #crosshair::after {
+        top: 5px;
+        left: 0;
+        height: 2px;
+        width: 12px;
+      }
+
+      #panel {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%);
+        width: min(820px, calc(100% - 24px));
+        z-index: 50;
+        pointer-events: auto;
+      }
+
+      .dialogue-card {
+        display: none;
+        border-radius: 18px;
+        overflow: hidden;
+        background: linear-gradient(145deg, rgba(12, 18, 34, 0.96), rgba(8, 12, 24, 0.94));
+        border: 1px solid rgba(120, 170, 255, 0.35);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+        animation: slideUp 0.35s ease;
+      }
+
+      .dialogue-card.visible {
+        display: block;
+      }
+
+      @keyframes slideUp {
+        from { opacity: 0; transform: translateY(18px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .dialogue-header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 16px 18px 10px;
+        border-bottom: 1px solid rgba(145, 175, 255, 0.15);
+      }
+
+      .speaker-avatar {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: 20px;
+        color: #fff;
+        flex-shrink: 0;
+        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+      }
+
+      .speaker-avatar.customer { background: linear-gradient(135deg, #ff6b6b, #c92a2a); }
+      .speaker-avatar.agent { background: linear-gradient(135deg, #ffa94d, #e67700); }
+      .speaker-avatar.receptionist { background: linear-gradient(135deg, #4dabf7, #1864ab); }
+
+      .speaker-meta h2 {
+        margin: 0;
+        font-size: 18px;
+        color: #f3f7ff;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+
+      .speaker-role {
+        display: inline-block;
+        margin-top: 4px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #dbe7ff;
+        background: rgba(109, 160, 255, 0.18);
+        border: 1px solid rgba(145, 175, 255, 0.28);
+      }
+
+      .dialogue-body {
+        padding: 14px 18px 8px;
+      }
+
+      .dialogue-text {
+        margin: 0;
+        min-height: 72px;
+        font-size: 16px;
+        line-height: 1.65;
+        color: #e8f0ff;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+
+      .dialogue-text .cursor {
+        display: inline-block;
+        width: 2px;
+        height: 1em;
+        background: #6da0ff;
+        margin-left: 2px;
+        vertical-align: text-bottom;
+        animation: blink 0.8s step-end infinite;
+      }
+
+      @keyframes blink {
+        50% { opacity: 0; }
+      }
+
+      .dialogue-choices {
+        padding: 8px 14px 14px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .menu-card {
+        padding: 16px;
+        border-radius: 14px;
+        font-family: Arial, sans-serif;
+        color: #f3f7ff;
+        background: rgba(5, 8, 16, 0.86);
+        border: 1px solid rgba(145, 175, 255, 0.22);
+        backdrop-filter: blur(6px);
+      }
+
+      #click-to-play {
+        display: none !important;
+      }
+
+      canvas {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+      }
+
+      #interaction-prompt {
+        position: fixed;
+        left: 50%;
+        bottom: 140px;
+        transform: translateX(-50%);
+        padding: 8px 12px;
+        border-radius: 9px;
+        font-family: Arial, sans-serif;
+        font-size: 13px;
+        color: #ecf2ff;
+        background: rgba(8, 13, 24, 0.78);
+        border: 1px solid rgba(145, 175, 255, 0.28);
+        z-index: 12;
+        display: none;
+      }
+
+      #scenario-title {
+        margin: 0 0 8px;
+        font-size: 20px;
+      }
+
+      #dialogue {
+        margin: 0 0 14px;
+        line-height: 1.5;
+      }
+
+      #choices {
+        display: grid;
+        gap: 10px;
+      }
+
+      .choice-btn,
+      #restart-btn {
+        width: 100%;
+        padding: 12px 14px;
+        text-align: left;
+        font-size: 14px;
+        color: #f3f7ff;
+        background: linear-gradient(90deg, rgba(109, 160, 255, 0.12), rgba(109, 160, 255, 0.06));
+        border: 1px solid rgba(145, 175, 255, 0.35);
+        border-radius: 12px;
+        cursor: pointer;
+        transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+
+      .choice-btn:hover,
+      #restart-btn:hover {
+        background: linear-gradient(90deg, rgba(109, 160, 255, 0.28), rgba(109, 160, 255, 0.14));
+        border-color: rgba(160, 200, 255, 0.65);
+        transform: translateY(-1px);
+      }
+
+      #result-screen {
+        display: none;
+      }
+
+      .screen-visible {
+        display: block !important;
+      }
+
+      #result-screen h2 {
+        margin: 0 0 10px;
+      }
+
+      #result-summary {
+        margin: 0 0 12px;
+      }
+
+      #title-screen {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        pointer-events: none;
+      }
+
+      #title-screen.screen-visible {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 7vh;
+        animation: titleFadeIn 0.9s ease forwards;
+      }
+
+      .title-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        pointer-events: auto;
+      }
+
+      @keyframes titleFadeIn {
+        from { opacity: 0; transform: translateY(-16px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .hanging-title-wrap {
+        display: inline-block;
+        transform-origin: top center;
+        animation: hangSwing 3.6s ease-in-out infinite;
+      }
+
+      .hanging-rope {
+        width: 2px;
+        height: 48px;
+        margin: 0 auto;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(228, 236, 255, 0.72));
+        box-shadow: 0 0 8px rgba(255, 255, 255, 0.12);
+      }
+
+      .hanging-title {
+        margin: 10px 0 0;
+        padding: 16px 34px;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(30px, 5.5vw, 56px);
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: #f8f4e8;
+        text-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        background: linear-gradient(145deg, rgba(32, 38, 58, 0.94), rgba(14, 18, 30, 0.9));
+        border: 2px solid rgba(212, 184, 118, 0.58);
+        border-radius: 8px;
+        box-shadow: 0 16px 42px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        white-space: nowrap;
+      }
+
+      @keyframes hangSwing {
+        0%, 100% { transform: rotate(-3deg); }
+        50% { transform: rotate(3deg); }
+      }
+
+      #play-btn {
+        position: relative;
+        display: block;
+        margin: 28px 0 0;
+        min-width: 220px;
+        padding: 16px 36px;
+        overflow: hidden;
+        text-align: center;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #fff8e8;
+        background: linear-gradient(135deg, rgba(48, 42, 28, 0.95), rgba(18, 16, 12, 0.92));
+        border: 2px solid rgba(212, 184, 118, 0.72);
+        border-radius: 10px;
+        box-shadow:
+          0 10px 32px rgba(0, 0, 0, 0.42),
+          0 0 24px rgba(212, 184, 118, 0.14),
+          inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        cursor: pointer;
+        transition:
+          transform 0.22s ease,
+          border-color 0.22s ease,
+          box-shadow 0.22s ease,
+          color 0.22s ease;
+        animation: playBtnIn 0.9s ease 0.4s both, playBtnPulse 2.8s ease-in-out 1.3s infinite;
+      }
+
+      #play-btn::before {
+        content: "▶";
+        margin-right: 10px;
+        font-size: 12px;
+        color: #d4b876;
+        vertical-align: middle;
+      }
+
+      #play-btn::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          115deg,
+          transparent 30%,
+          rgba(255, 236, 190, 0.18) 48%,
+          transparent 66%
+        );
+        transform: translateX(-130%);
+        transition: transform 0.55s ease;
+        pointer-events: none;
+      }
+
+      @keyframes playBtnIn {
+        from { opacity: 0; transform: translateY(18px) scale(0.96); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      @keyframes playBtnPulse {
+        0%, 100% {
+          box-shadow:
+            0 10px 32px rgba(0, 0, 0, 0.42),
+            0 0 20px rgba(212, 184, 118, 0.12),
+            inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        }
+        50% {
+          box-shadow:
+            0 12px 36px rgba(0, 0, 0, 0.48),
+            0 0 34px rgba(212, 184, 118, 0.28),
+            inset 0 1px 0 rgba(255, 255, 255, 0.16);
+        }
+      }
+
+      #play-btn:hover {
+        color: #fffdf6;
+        border-color: rgba(232, 206, 148, 0.95);
+        transform: translateY(-3px) scale(1.03);
+        box-shadow:
+          0 16px 40px rgba(0, 0, 0, 0.5),
+          0 0 40px rgba(212, 184, 118, 0.35),
+          inset 0 1px 0 rgba(255, 255, 255, 0.2);
+      }
+
+      #play-btn:hover::after {
+        transform: translateX(130%);
+      }
+
+      #play-btn:active {
+        transform: translateY(-1px) scale(1.01);
+      }
+
+      #play-btn:disabled {
+        opacity: 0.72;
+        cursor: wait;
+        animation: none;
+        transform: none;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./node_modules/three/build/three.module.js"
+        }
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-B1r8SBrD.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="title-screen">
+      <div class="title-stack">
+        <div class="hanging-title-wrap">
+          <div class="hanging-rope"></div>
+          <h1 class="hanging-title">The Persona Mirror</h1>
+        </div>
+        <button id="play-btn" type="button">Play Now</button>
+      </div>
+    </div>
+
+    <div id="panel">
+      <div id="game-screen" class="dialogue-card">
+        <div class="dialogue-header">
+          <div id="speaker-avatar" class="speaker-avatar customer">C</div>
+          <div class="speaker-meta">
+            <h2 id="scenario-title">Scenario</h2>
+            <span id="speaker-role" class="speaker-role">Customer</span>
+          </div>
+        </div>
+        <div class="dialogue-body">
+          <p id="dialogue" class="dialogue-text"></p>
+        </div>
+        <div id="choices" class="dialogue-choices"></div>
+      </div>
+
+      <div id="result-screen" class="menu-card">
+        <h2 id="result-title">Result</h2>
+        <p id="result-summary"></p>
+        <button id="restart-btn" type="button">Play Again</button>
+      </div>
+    </div>
+    <div id="interaction-prompt">Press E to talk</div>
+    <div id="crosshair"></div>
+    <div id="status">Loading model...</div>
+  </body>
+</html>
