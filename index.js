@@ -1,6 +1,15 @@
 import * as THREE from "three";
 import { GLTFLoader } from "./node_modules/three/examples/jsm/loaders/GLTFLoader.js";
+import { FBXLoader } from "./node_modules/three/examples/jsm/loaders/FBXLoader.js";
+import {
+  initHarryMeetingDemo,
+  enterHarryMeetingDemo,
+  exitHarryMeetingDemo,
+  isHarryMeetingDemoActive,
+  updateHarryMeetingDemo,
+} from "./harry-meeting-demo.js";
 
+const DASHING_MANAGER_FBX = "./assets/dashing_manager.fbx";
 const container = document.getElementById("app");
 const status = document.getElementById("status");
 const titleScreen = document.getElementById("title-screen");
@@ -10,6 +19,11 @@ const scenarioTitle = document.getElementById("scenario-title");
 const dialogue = document.getElementById("dialogue");
 const choices = document.getElementById("choices");
 const playBtn = document.getElementById("play-btn");
+const meetingDemoBtn = document.getElementById("meeting-demo-btn");
+const meetingDemoScreen = document.getElementById("meeting-demo-screen");
+const meetingDemoSubtitle = document.getElementById("meeting-demo-subtitle");
+const meetingDemoProgress = document.getElementById("meeting-demo-progress");
+const meetingDemoBackBtn = document.getElementById("meeting-demo-back");
 const restartBtn = document.getElementById("restart-btn");
 const resultTitle = document.getElementById("result-title");
 const resultSummary = document.getElementById("result-summary");
@@ -1457,6 +1471,7 @@ function alignManagerToChair(model, chairNode) {
   const chairBox = new THREE.Box3().setFromObject(chairNode);
   const chairSize = chairBox.getSize(new THREE.Vector3());
   const chairCenter = chairBox.getCenter(new THREE.Vector3());
+  const desk = getOfficeObjectBounds(/^Desk$/i);
 
   if (model.parent !== scene) {
     model.parent?.remove(model);
@@ -1465,58 +1480,120 @@ function alignManagerToChair(model, chairNode) {
 
   model.visible = true;
   model.rotation.set(0, 0, 0);
-  model.scale.set(1, 1, 1);
   model.position.set(0, 0, 0);
+  // Keep any prior unit normalize (cm → m), don't force scale back to 1.
   model.updateMatrixWorld(true);
 
   const modelBox = new THREE.Box3().setFromObject(model);
   const modelHeight = modelBox.getSize(new THREE.Vector3()).y;
-  const targetHeight = Math.max(chairSize.y * 1.55, 0.65);
-  model.scale.setScalar(targetHeight / Math.max(modelHeight, 0.001));
+  const targetHeight = 1.72;
+  const unitScale = model.scale.x || 1;
+  model.scale.setScalar(unitScale * (targetHeight / Math.max(modelHeight, 0.001)));
   model.updateMatrixWorld(true);
 
-  const grounded = new THREE.Box3().setFromObject(model);
-  const desk = getOfficeObjectBounds(/^Desk$/i);
-  const towardDeskZ = desk ? desk.center.z : chairCenter.z + chairSize.z * 0.25;
-  const seatY = chairBox.min.y + chairSize.y * 0.22;
-  const legSink = chairSize.y * 0.28 + (desk ? desk.size.y * 0.16 : 0);
-
-  let posY = seatY - grounded.min.y - legSink;
+  // Face the desk, then yaw slightly right so he faces the player better.
   if (desk) {
-    const tuckedFeetY = desk.box.min.y + desk.size.y * 0.04;
-    posY = Math.min(posY, tuckedFeetY - grounded.min.y);
+    model.rotation.y =
+      Math.atan2(desk.center.x - chairCenter.x, desk.center.z - chairCenter.z) -
+      THREE.MathUtils.degToRad(20);
   }
 
-  model.position.set(
-    chairCenter.x,
-    posY,
-    THREE.MathUtils.lerp(chairCenter.z, towardDeskZ, 0.22)
-  );
+  const animator = npcAnimators.get("manager");
+  if (animator?.mixer) animator.mixer.update(0);
+  model.updateMatrixWorld(true);
 
-  if (desk) {
-    model.rotation.y = Math.atan2(
-      desk.center.x - model.position.x,
-      desk.center.z - model.position.z
+  const hipWorld = new THREE.Vector3();
+  let hasHip = false;
+  model.traverse((child) => {
+    if (hasHip || !child.isBone) return;
+    if (/hips/i.test(child.name)) {
+      child.getWorldPosition(hipWorld);
+      hasHip = true;
+    }
+  });
+
+  if (!hasHip) {
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    hipWorld.set(
+      (box.min.x + box.max.x) * 0.5,
+      box.min.y + size.y * 0.45,
+      (box.min.z + box.max.z) * 0.5
     );
   }
 
+  // Seat surface + pull slightly toward the desk so he sits in the cushion, not behind the backrest.
+  const seatY = chairBox.min.y + chairSize.y * 0.56;
+  let targetX = chairCenter.x;
+  let targetZ = chairCenter.z;
+  if (desk) {
+    const towardDesk = Math.sign(desk.center.z - chairCenter.z) || 1;
+    targetZ = chairCenter.z + towardDesk * chairSize.z * 0.22;
+  }
+
+  model.position.set(
+    targetX - hipWorld.x,
+    seatY - hipWorld.y,
+    targetZ - hipWorld.z
+  );
+
   prepareManagerMaterials(model);
   model.updateMatrixWorld(true);
+}
+
+function loadFbx(path) {
+  return new Promise((resolve, reject) => {
+    new FBXLoader().load(path, resolve, undefined, reject);
+  });
+}
+
+function setupManagerAnimation(model) {
+  const clip = model.animations?.[0];
+  if (!clip) {
+    console.warn("[Manager] dashing_manager.fbx has no embedded animation.");
+    return null;
+  }
+
+  const mixer = new THREE.AnimationMixer(model);
+  const animator = {
+    id: "manager",
+    mixer,
+    model,
+    idleClip: clip,
+    walkClip: null,
+    activeAction: null,
+    moveJob: null,
+  };
+
+  playNpcClip(animator, clip, true);
+  npcAnimators.set("manager", animator);
+  managerAnimReady = true;
+  console.info("[Manager] dashing_manager.fbx wired:", clip.name, clip.tracks.length, "tracks");
+  return animator;
+}
+
+function normalizeManagerUnits(model) {
+  model.updateMatrixWorld(true);
+  const rawHeight = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()).y;
+  if (rawHeight > 10) {
+    model.scale.setScalar(0.01);
+    model.updateMatrixWorld(true);
+  }
 }
 
 async function ensureManagerModel() {
   if (npcs.manager) return npcs.manager;
 
   if (!managerEnvironmentReady) {
-    managerEnvironmentReady = loadGltf("./assets/manager.glb")
-      .then((gltf) => {
-        npcs.manager = gltf.scene;
+    managerEnvironmentReady = loadFbx(DASHING_MANAGER_FBX)
+      .then((fbx) => {
+        npcs.manager = fbx;
         npcs.manager.visible = false;
+        normalizeManagerUnits(npcs.manager);
         prepareModelMeshes(npcs.manager);
         prepareManagerMaterials(npcs.manager);
         discoverLipSync(npcs.manager, "manager");
-        setupNpcAnimations("manager", npcs.manager, gltf);
-        managerAnimReady = true;
+        setupManagerAnimation(npcs.manager);
         scene.add(npcs.manager);
         return npcs.manager;
       })
@@ -1541,6 +1618,14 @@ function setupManagerOnChair() {
   }
 
   officeModel.updateMatrixWorld(true);
+
+  const animator = npcAnimators.get("manager");
+  if (animator?.mixer && animator.idleClip) {
+    const action = animator.mixer.clipAction(animator.idleClip);
+    action.time = Math.min(0.35, animator.idleClip.duration * 0.05);
+    animator.mixer.update(0);
+  }
+
   alignManagerToChair(npcs.manager, chairNode);
   npcs.manager.visible = true;
 
@@ -1703,8 +1788,8 @@ function updateDialoguePanelPosition() {
   const cardW = quizRightAnchor.offsetWidth || 360;
   const margin = 16;
   const left = THREE.MathUtils.clamp(
-    x + 18,
-    window.innerWidth * 0.48,
+    x + 48,
+    window.innerWidth * 0.60,
     window.innerWidth - cardW - margin
   );
   const top = THREE.MathUtils.clamp(
@@ -2219,6 +2304,22 @@ function normalizeOfficeModel(model) {
   return wrapper;
 }
 
+/** Push laptop toward desk front / camera so manager hand gestures don't clip into it. */
+function nudgeOfficeLaptopAwayFromChair(model) {
+  let laptop = null;
+  model.traverse((child) => {
+    if (!laptop && /Lenovo_laptop/i.test(child.name || "")) laptop = child;
+  });
+  if (!laptop) {
+    console.warn("[Office] Lenovo_laptop not found — skip nudge.");
+    return;
+  }
+
+  // Chair sits at lower Z; desk/camera at higher Z — nudge laptop +Z toward the viewer.
+  laptop.position.z += 0.22;
+  laptop.updateMatrixWorld(true);
+}
+
 async function ensureOfficeEnvironment() {
   if (officeModel) return officeModel;
 
@@ -2228,6 +2329,7 @@ async function ensureOfficeEnvironment() {
       officeModel.visible = false;
       prepareModelMeshes(officeModel);
       prepareOfficeMaterials(officeModel);
+      nudgeOfficeLaptopAwayFromChair(officeModel);
       scene.add(officeModel);
       return officeModel;
     });
@@ -2321,6 +2423,9 @@ async function startGame() {
 }
 
 function resetToTitleScreen() {
+  if (isHarryMeetingDemoActive()) {
+    exitHarryMeetingDemo();
+  }
   stopTimer();
   stopTypewriter();
   stopVoiceCommands();
@@ -2354,6 +2459,61 @@ playBtn.addEventListener("click", (e) => {
   musicUnlocked = true;
   stopAllMusic();
   startGame();
+});
+
+meetingDemoBtn?.addEventListener("click", async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (isHarryMeetingDemoActive()) return;
+
+  musicUnlocked = true;
+  meetingDemoBtn.disabled = true;
+  const originalLabel = meetingDemoBtn.textContent;
+  meetingDemoBtn.textContent = "Loading...";
+
+  try {
+    await enterHarryMeetingDemo();
+  } finally {
+    meetingDemoBtn.disabled = false;
+    meetingDemoBtn.textContent = originalLabel;
+  }
+});
+
+meetingDemoBackBtn?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  exitHarryMeetingDemo();
+});
+
+initHarryMeetingDemo({
+  scene,
+  camera,
+  get exteriorModel() {
+    return exteriorModel;
+  },
+  get officeModel() {
+    return officeModel;
+  },
+  npcs,
+  exteriorLights,
+  officeLights,
+  loadGltf,
+  prepareModelMeshes,
+  speakText,
+  stopSpeaking,
+  stopAllLipSync,
+  stopAllMusic,
+  playMusicTrack,
+  setStatus,
+  hideTitleScreen: () => titleScreen.classList.remove("screen-visible"),
+  showTitleScreen: () => titleScreen.classList.add("screen-visible"),
+  restoreTitleView: () => activateExteriorTitleView(),
+  ui: {
+    screen: meetingDemoScreen,
+    subtitleEl: meetingDemoSubtitle,
+    progressEl: meetingDemoProgress,
+    backBtn: meetingDemoBackBtn,
+  },
 });
 restartBtn.addEventListener("click", resetToTitleScreen);
 
@@ -2458,13 +2618,17 @@ function animate() {
   requestAnimationFrame(animate);
   const delta = clampDelta(clock.getDelta());
 
-  if (introCamera.active) {
-    updateIntroCinematic(delta);
-  }
+  if (isHarryMeetingDemoActive()) {
+    updateHarryMeetingDemo(delta);
+  } else {
+    if (introCamera.active) {
+      updateIntroCinematic(delta);
+    }
 
-  updateLipSync(delta);
-  updateNpcAnimators(delta);
-  updateDialoguePanelPosition();
+    updateLipSync(delta);
+    updateNpcAnimators(delta);
+    updateDialoguePanelPosition();
+  }
 
   renderer.render(scene, camera);
 }
