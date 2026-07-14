@@ -13,13 +13,585 @@ const playBtn = document.getElementById("play-btn");
 const restartBtn = document.getElementById("restart-btn");
 const resultTitle = document.getElementById("result-title");
 const resultSummary = document.getElementById("result-summary");
+const analyticsOverlay = document.getElementById("analytics-overlay");
+const analyticsTitle = document.getElementById("analytics-title");
+const analyticsSubtitle = document.getElementById("analytics-subtitle");
+const analyticsDominant = document.getElementById("analytics-dominant");
+const analyticsTraits = document.getElementById("analytics-traits");
+const analyticsFeedback = document.getElementById("analytics-feedback");
+const analyticsWorkplace = document.getElementById("analytics-workplace");
+const analyticsGrowth = document.getElementById("analytics-growth");
+const analyticsFinishBtn = document.getElementById("analytics-finish-btn");
 const panel = document.getElementById("panel");
 const quizOverlay = document.getElementById("quiz-overlay");
-const quizLeft = document.getElementById("quiz-left");
+const quizResponse = document.getElementById("quiz-response");
 const quizRightAnchor = document.getElementById("quiz-right-anchor");
+const introResponse = document.getElementById("intro-response");
+const userIntroInput = document.getElementById("user-intro-input");
+const introNextBtn = document.getElementById("intro-next-btn");
+const musicToggleBtn = document.getElementById("music-toggle");
+const voiceToggleBtn = document.getElementById("voice-toggle");
 const speakerAvatar = document.getElementById("speaker-avatar");
 const speakerRole = document.getElementById("speaker-role");
 const managerHeadPos = new THREE.Vector3();
+const managerHeadScratch = new THREE.Vector3();
+let managerAnimReady = false;
+let lastDialogueAnchor = { x: 0, y: 0 };
+
+const MUSIC = {
+  intro: "./assets/sounds/intro_2.mp3",
+  button: "./assets/sounds/button_click.mp3",
+  victory: "./assets/sounds/victory.mp3",
+  resultBg: "./assets/sounds/result_bg.mp3",
+};
+
+const musicPlayers = {};
+let activeMusicKey = null;
+let musicEnabled = true;
+let musicUnlocked = false;
+
+function getMusicPlayer(key) {
+  if (!musicPlayers[key]) {
+    const player = new Audio(MUSIC[key]);
+    player.preload = "auto";
+    player.volume = key === "button" ? 0.65 : 0.45;
+    player.loop = false;
+    musicPlayers[key] = player;
+  }
+  return musicPlayers[key];
+}
+
+function syncMusicToggleUi() {
+  if (!musicToggleBtn) return;
+  musicToggleBtn.classList.toggle("is-muted", !musicEnabled);
+  musicToggleBtn.setAttribute(
+    "aria-label",
+    musicEnabled ? "Mute music" : "Unmute music"
+  );
+  musicToggleBtn.title = musicEnabled ? "Music On" : "Music Off";
+}
+
+function stopAllMusic() {
+  for (const player of Object.values(musicPlayers)) {
+    player.pause();
+    player.currentTime = 0;
+  }
+  activeMusicKey = null;
+}
+
+function getScreenMusicKey() {
+  if (
+    resultScreen.classList.contains("screen-visible") ||
+    analyticsOverlay?.classList.contains("visible")
+  ) {
+    return "victory";
+  }
+  if (titleScreen.classList.contains("screen-visible")) return "intro";
+  return null;
+}
+
+async function playMusicTrack(key) {
+  if (!key) return;
+  if (!musicEnabled) {
+    activeMusicKey = key;
+    return;
+  }
+
+  stopAllMusic();
+  const player = getMusicPlayer(key);
+  player.loop = false;
+  try {
+    await player.play();
+    musicUnlocked = true;
+    activeMusicKey = key;
+  } catch {
+    activeMusicKey = key;
+  }
+}
+
+async function playOfficeAnimationMusic() {
+  if (!musicEnabled) {
+    activeMusicKey = "resultBg";
+    return;
+  }
+
+  stopAllMusic();
+  const player = getMusicPlayer("resultBg");
+  player.loop = true;
+  player.currentTime = 0;
+
+  try {
+    await player.play();
+    musicUnlocked = true;
+    activeMusicKey = "resultBg";
+  } catch {
+    activeMusicKey = "resultBg";
+  }
+}
+
+function stopOfficeAnimationMusic() {
+  const player = musicPlayers.resultBg;
+  if (player) {
+    player.loop = false;
+    player.pause();
+    player.currentTime = 0;
+  }
+  if (activeMusicKey === "resultBg") {
+    activeMusicKey = null;
+  }
+}
+
+function playButtonClick() {
+  if (!musicEnabled) return;
+  const player = getMusicPlayer("button");
+  player.currentTime = 0;
+  player.play().catch(() => {});
+  musicUnlocked = true;
+}
+
+function pauseMusic() {
+  for (const player of Object.values(musicPlayers)) {
+    player.pause();
+  }
+}
+
+function resumeScreenMusic() {
+  if (introCamera.active && introCamera.mode === "office") {
+    playOfficeAnimationMusic();
+    return;
+  }
+
+  const key = activeMusicKey || getScreenMusicKey();
+  if (key && key !== "button") {
+    playMusicTrack(key);
+  }
+}
+
+function setMusicEnabled(enabled) {
+  musicEnabled = enabled;
+  syncMusicToggleUi();
+  if (musicEnabled) {
+    resumeScreenMusic();
+  } else {
+    pauseMusic();
+  }
+}
+
+function unlockAndPlayMusic() {
+  musicUnlocked = true;
+  if (musicEnabled) {
+    playMusicTrack(getScreenMusicKey() || "intro");
+  }
+}
+
+const SpeechRecognitionCtor =
+  window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
+let voiceEnabled = true;
+let speechNpcId = null;
+let voiceCommandActive = false;
+let isListening = false;
+let introSpeechBase = "";
+let speechRecognition = null;
+let musicDucked = false;
+
+function isSpeechActive() {
+  return Boolean(window.speechSynthesis?.speaking || window.speechSynthesis?.pending);
+}
+
+function getPreferredVoice() {
+  const voices = window.speechSynthesis?.getVoices() || [];
+  return (
+    voices.find((v) => v.lang.startsWith("en") && /male|david|mark|google us english/i.test(v.name)) ||
+    voices.find((v) => v.lang.startsWith("en"))
+  );
+}
+
+function duckMusicForSpeech() {
+  if (musicDucked) return;
+  for (const player of Object.values(musicPlayers)) {
+    if (!player.paused) {
+      player._preSpeechVolume = player.volume;
+      player.volume *= 0.22;
+    }
+  }
+  musicDucked = true;
+}
+
+function restoreMusicAfterSpeech() {
+  if (!musicDucked) return;
+  for (const player of Object.values(musicPlayers)) {
+    if (player._preSpeechVolume !== undefined) {
+      player.volume = player._preSpeechVolume;
+      delete player._preSpeechVolume;
+    }
+  }
+  musicDucked = false;
+}
+
+function stopSpeaking() {
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+  restoreMusicAfterSpeech();
+  if (speechNpcId) {
+    setLipSpeaking(speechNpcId, false);
+    speechNpcId = null;
+  }
+}
+
+function speakText(text, { npcId = null, onEnd = null, rate = 0.94, pitch = 1 } = {}) {
+  if (!voiceEnabled || !text?.trim() || !window.speechSynthesis) {
+    onEnd?.();
+    return;
+  }
+
+  stopSpeaking();
+  duckMusicForSpeech();
+
+  const utterance = new SpeechSynthesisUtterance(text.trim());
+  utterance.rate = rate;
+  utterance.pitch = pitch;
+  utterance.lang = "en-US";
+
+  const preferredVoice = getPreferredVoice();
+  if (preferredVoice) utterance.voice = preferredVoice;
+
+  if (npcId) {
+    speechNpcId = npcId;
+    setLipSpeaking(npcId, true);
+  }
+
+  const cleanup = () => {
+    restoreMusicAfterSpeech();
+    if (speechNpcId === npcId) {
+      setLipSpeaking(npcId, false);
+      speechNpcId = null;
+    }
+    onEnd?.();
+  };
+
+  utterance.onend = cleanup;
+  utterance.onerror = cleanup;
+  window.speechSynthesis.speak(utterance);
+}
+
+function syncVoiceToggleUi() {
+  if (!voiceToggleBtn) return;
+  voiceToggleBtn.classList.toggle("is-muted", !voiceEnabled);
+  voiceToggleBtn.classList.toggle("is-listening", voiceEnabled && isListening);
+  voiceToggleBtn.setAttribute("aria-label", voiceEnabled ? "Mute voice" : "Unmute voice");
+  voiceToggleBtn.title = voiceEnabled ? "Voice On" : "Voice Off";
+}
+
+function normalizeSpeech(text) {
+  return (text || "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getChoiceButtons() {
+  return [...choices.querySelectorAll(".choice-btn:not(:disabled)")];
+}
+
+function getChoiceIndexFromSpeech(transcript, total) {
+  const norm = normalizeSpeech(transcript);
+  const wordMap = {
+    one: 0,
+    first: 0,
+    two: 1,
+    second: 1,
+    three: 2,
+    third: 2,
+    four: 3,
+    fourth: 3,
+    five: 4,
+    fifth: 4,
+  };
+
+  const optionMatch = norm.match(/option\s*(\d+)/);
+  if (optionMatch) {
+    const idx = Number(optionMatch[1]) - 1;
+    if (idx >= 0 && idx < total) return idx;
+  }
+
+  if (/^\d+$/.test(norm)) {
+    const idx = Number(norm) - 1;
+    if (idx >= 0 && idx < total) return idx;
+  }
+
+  for (const [word, idx] of Object.entries(wordMap)) {
+    if (norm === word || norm.endsWith(` ${word}`) || norm.startsWith(`${word} `)) {
+      if (idx < total) return idx;
+    }
+  }
+
+  return -1;
+}
+
+function scoreChoiceMatch(transcript, optionText) {
+  const spoken = normalizeSpeech(transcript);
+  const option = normalizeSpeech(optionText);
+  if (!spoken || !option) return 0;
+
+  if (spoken === option || spoken.includes(option) || option.includes(spoken)) {
+    return 1;
+  }
+
+  const spokenWords = spoken.split(" ").filter((w) => w.length > 2);
+  const optionWords = option.split(" ").filter((w) => w.length > 2);
+  if (!spokenWords.length || !optionWords.length) return 0;
+
+  let hits = 0;
+  for (const word of spokenWords) {
+    if (optionWords.some((optWord) => optWord.includes(word) || word.includes(optWord))) {
+      hits += 1;
+    }
+  }
+
+  return hits / Math.max(spokenWords.length, 1);
+}
+
+function findChoiceFromSpeech(transcript) {
+  const buttons = getChoiceButtons();
+  if (!buttons.length) return null;
+
+  const norm = normalizeSpeech(transcript);
+  if (!norm) return null;
+
+  if (/\b(yes|yeah|yep|ready|start)\b/.test(norm)) {
+    const yesBtn = buttons.find((btn) => normalizeSpeech(btn.textContent) === "yes");
+    if (yesBtn) return yesBtn;
+  }
+
+  if (/\b(no|nope|not ready|cancel)\b/.test(norm)) {
+    const noBtn = buttons.find((btn) => normalizeSpeech(btn.textContent) === "no");
+    if (noBtn) return noBtn;
+  }
+
+  if (norm.includes("view result")) {
+    const resultsBtn = buttons.find((btn) => normalizeSpeech(btn.textContent).includes("view result"));
+    if (resultsBtn) return resultsBtn;
+  }
+
+  const index = getChoiceIndexFromSpeech(transcript, buttons.length);
+  if (index >= 0) return buttons[index];
+
+  let bestBtn = null;
+  let bestScore = 0.42;
+  for (const btn of buttons) {
+    const score = scoreChoiceMatch(transcript, btn.textContent);
+    if (score > bestScore) {
+      bestScore = score;
+      bestBtn = btn;
+    }
+  }
+
+  return bestBtn;
+}
+
+function isSubmitSpeech(transcript) {
+  const norm = normalizeSpeech(transcript);
+  return ["next", "submit", "done", "continue", "proceed", "send", "go ahead"].some(
+    (word) => norm === word || norm.endsWith(` ${word}`) || norm.startsWith(`${word} `)
+  );
+}
+
+function handleIntroSpeech(finalTranscript, interimTranscript) {
+  if (!userIntroInput || state.conversationPhase !== "user-intro") return;
+
+  if (finalTranscript && isSubmitSpeech(finalTranscript)) {
+    stopVoiceCommands();
+    submitUserIntro();
+    return;
+  }
+
+  if (finalTranscript) {
+    const cleaned = finalTranscript.trim();
+    if (!cleaned || isSubmitSpeech(cleaned)) return;
+    introSpeechBase = introSpeechBase ? `${introSpeechBase} ${cleaned}` : cleaned;
+    userIntroInput.value = introSpeechBase.slice(0, 280);
+    syncIntroNextEnabled();
+    return;
+  }
+
+  if (interimTranscript) {
+    const preview = introSpeechBase
+      ? `${introSpeechBase} ${interimTranscript.trim()}`
+      : interimTranscript.trim();
+    userIntroInput.value = preview.slice(0, 280);
+    syncIntroNextEnabled();
+  }
+}
+
+function handleChoiceSpeech(transcript) {
+  const match = findChoiceFromSpeech(transcript);
+  if (!match) return;
+
+  stopVoiceCommands();
+  const label = match.textContent.trim();
+  speakText(`You selected ${label}.`, {
+    onEnd: () => {
+      match.click();
+    },
+  });
+}
+
+function initSpeechRecognition() {
+  if (!SpeechRecognitionCtor || speechRecognition) return speechRecognition;
+
+  const recognition = new SpeechRecognitionCtor();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = "en-US";
+  recognition.maxAlternatives = 3;
+
+  recognition.onresult = (event) => {
+    if (!voiceEnabled || !voiceCommandActive || isSpeechActive()) return;
+
+    let finalTranscript = "";
+    let interimTranscript = "";
+
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const piece = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += piece;
+      } else {
+        interimTranscript += piece;
+      }
+    }
+
+    if (state.conversationPhase === "user-intro") {
+      handleIntroSpeech(finalTranscript.trim(), interimTranscript.trim());
+      return;
+    }
+
+    if (finalTranscript.trim() && getChoiceButtons().length) {
+      handleChoiceSpeech(finalTranscript.trim());
+    }
+  };
+
+  recognition.onerror = (event) => {
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      voiceCommandActive = false;
+      isListening = false;
+      syncVoiceToggleUi();
+      return;
+    }
+
+    if (voiceCommandActive && voiceEnabled) {
+      window.setTimeout(() => {
+        if (voiceCommandActive && voiceEnabled && !isSpeechActive()) {
+          startVoiceCommands();
+        }
+      }, 450);
+    }
+  };
+
+  recognition.onend = () => {
+    isListening = false;
+    syncVoiceToggleUi();
+    if (voiceCommandActive && voiceEnabled && !isSpeechActive()) {
+      window.setTimeout(() => {
+        if (voiceCommandActive && voiceEnabled && !isSpeechActive()) {
+          startVoiceCommands();
+        }
+      }, 280);
+    }
+  };
+
+  speechRecognition = recognition;
+  return recognition;
+}
+
+function startVoiceCommands() {
+  if (!voiceEnabled || !SpeechRecognitionCtor) return;
+  if (isSpeechActive()) return;
+
+  const canListen =
+    state.conversationPhase === "user-intro" ||
+    (quizResponse?.classList.contains("response-visible") && getChoiceButtons().length > 0);
+
+  if (!canListen) return;
+
+  const recognition = initSpeechRecognition();
+  if (!recognition) return;
+
+  voiceCommandActive = true;
+
+  try {
+    recognition.start();
+    isListening = true;
+    syncVoiceToggleUi();
+  } catch {
+    isListening = false;
+    syncVoiceToggleUi();
+  }
+}
+
+function stopVoiceCommands() {
+  voiceCommandActive = false;
+  isListening = false;
+  syncVoiceToggleUi();
+
+  if (speechRecognition) {
+    try {
+      speechRecognition.stop();
+    } catch {
+      // Ignore stop errors when recognition is already idle.
+    }
+  }
+}
+
+function getResponseVoiceHint() {
+  if (state.conversationPhase === "user-intro") {
+    return "Tell me about yourself, then say next when you are finished.";
+  }
+
+  const buttons = getChoiceButtons();
+  if (!buttons.length) return "";
+
+  if (buttons.length === 1) {
+    return `Say ${buttons[0].textContent.trim()} to continue.`;
+  }
+
+  if (buttons.length === 2 && buttons.every((btn) => ["yes", "no"].includes(normalizeSpeech(btn.textContent)))) {
+    return "Say yes or no.";
+  }
+
+  return "Say option one or two, or speak your answer aloud.";
+}
+
+function speakResponsePrompt() {
+  if (!voiceEnabled) return;
+
+  const hint = getResponseVoiceHint();
+  const prompt = hint ? `Your response. ${hint}` : "Your response.";
+  speakText(prompt, { onEnd: () => startVoiceCommands() });
+}
+
+function setVoiceEnabled(enabled) {
+  voiceEnabled = enabled;
+  syncVoiceToggleUi();
+  if (!voiceEnabled) {
+    stopVoiceCommands();
+    stopSpeaking();
+  }
+}
+
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    getPreferredVoice();
+  };
+}
+
+const MANAGER_INTRO_TEXT =
+  "Hello! I'm Hanif Butt, manager of this company. Welcome aboard - before we jump into a few workplace scenarios, I'd love a quick intro from you.";
+const MANAGER_READY_TEXT = "Are you ready for doing the test?";
+const MANAGER_COMPLETION_TEXT =
+  "Congratulations! You have successfully completed the assessment. Please select the button below to review your detailed personality analytics and results.";
 
 function setStatus(text, isError = false) {
   status.textContent = text;
@@ -34,14 +606,38 @@ function hideQuizOverlay() {
   quizOverlay.classList.remove("visible");
   gameScreen.classList.remove("visible");
   hideResponsePanel();
+  setIntroResponseVisible(false);
 }
 
 function hideResponsePanel() {
-  quizLeft?.classList.remove("response-visible");
+  quizResponse?.classList.remove("response-visible");
+  stopVoiceCommands();
 }
 
 function showResponsePanel() {
-  quizLeft?.classList.add("response-visible");
+  quizResponse?.classList.add("response-visible");
+  speakResponsePrompt();
+}
+
+function setIntroResponseVisible(visible) {
+  if (!introResponse) return;
+  introResponse.classList.toggle("visible", visible);
+  if (visible) {
+    choices.innerHTML = "";
+    introSpeechBase = "";
+    if (userIntroInput) {
+      userIntroInput.value = "";
+      userIntroInput.focus();
+    }
+    syncIntroNextEnabled();
+  } else {
+    introSpeechBase = "";
+  }
+}
+
+function syncIntroNextEnabled() {
+  if (!introNextBtn || !userIntroInput) return;
+  introNextBtn.disabled = userIntroInput.value.trim().length < 2;
 }
 
 function showQuizOverlay() {
@@ -53,9 +649,14 @@ function showQuizOverlay() {
   updateDialoguePanelPosition();
 }
 
+function hideAnalyticsOverlay() {
+  analyticsOverlay?.classList.remove("visible");
+}
+
 function hideAllScreens() {
   titleScreen.classList.remove("screen-visible");
   hideQuizOverlay();
+  hideAnalyticsOverlay();
   resultScreen.classList.remove("screen-visible");
 }
 
@@ -128,6 +729,52 @@ const traitNames = {
   N: "Neuroticism",
 };
 
+const TRAIT_MAX_SCORE = 5;
+
+const traitFeedback = {
+  O: {
+    high: "You lean toward curiosity, experimentation, and creative problem-solving. New tools and ideas energize you rather than overwhelm you.",
+    moderate: "You balance practical routines with openness to useful change. You adopt innovation when the value is clear.",
+    low: "You prefer proven workflows and familiar systems. Stability helps you stay focused and deliver consistent results.",
+  },
+  C: {
+    high: "You are structured, reliable, and deadline-driven. Planning ahead and breaking work into steps comes naturally to you.",
+    moderate: "You can organize effectively when needed, though you may occasionally rely on momentum over detailed planning.",
+    low: "You work best with flexibility and may prefer adapting in the moment rather than following rigid schedules.",
+  },
+  E: {
+    high: "You gain energy from people, networking, and visible collaboration. You communicate confidently in group settings.",
+    moderate: "You collaborate well but also value focused solo work. You choose social engagement based on context.",
+    low: "You prefer deep individual work or small-group interaction. You contribute thoughtfully without needing the spotlight.",
+  },
+  A: {
+    high: "You prioritize harmony, empathy, and compromise. You listen actively and seek solutions that work for everyone.",
+    moderate: "You can be assertive when needed while still respecting others' perspectives in most situations.",
+    low: "You are direct and confident in your decisions. You prioritize outcomes and clarity over consensus.",
+  },
+  N: {
+    high: "You may feel pressure intensely under uncertainty. Awareness of stress triggers can help you build calming routines.",
+    moderate: "You experience normal workplace stress but generally recover and refocus with support or structure.",
+    low: "You stay composed under pressure and recover quickly from setbacks. Crisis moments rarely derail your focus.",
+  },
+};
+
+const workplaceStrengths = {
+  O: "Innovation, learning agility, and adaptability to change",
+  C: "Reliability, planning, and strong execution discipline",
+  E: "Team energy, stakeholder communication, and networking",
+  A: "Collaboration, conflict resolution, and team trust",
+  N: "Calm decision-making and resilience during high-pressure moments",
+};
+
+const growthSuggestions = {
+  O: "Try one new workflow improvement each month to stay adaptable without losing focus.",
+  C: "Use a simple daily priority list to protect deadlines when workload spikes.",
+  E: "Schedule intentional collaboration blocks while preserving time for deep work.",
+  A: "Practice assertive communication so your ideas are heard while staying respectful.",
+  N: "Build a brief reset ritual (breathing, walk, or checklist) before high-stakes meetings.",
+};
+
 const initialStats = {
   O: 0,
   C: 0,
@@ -143,6 +790,8 @@ const state = {
   introPlaying: false,
   awaitingPlay: false,
   showDialogue: false,
+  conversationPhase: "idle",
+  userIntro: "",
   timerId: null,
   currentQuestionIndex: 0,
 };
@@ -172,11 +821,11 @@ const fillLight = new THREE.DirectionalLight(0xaad8ff, 0.8);
 fillLight.position.set(-10, 8, -8);
 exteriorLights.add(ambientLight, keyLight, fillLight);
 
-const officeAmbient = new THREE.AmbientLight(0x8a4a22, 0.12);
-const officeHemi = new THREE.HemisphereLight(0xffb070, 0x120804, 0.28);
-const officeCeiling = new THREE.DirectionalLight(0xffe2c8, 0.22);
+const officeAmbient = new THREE.AmbientLight(0xb87848, 0.42);
+const officeHemi = new THREE.HemisphereLight(0xffc990, 0x2a1408, 0.55);
+const officeCeiling = new THREE.DirectionalLight(0xfff0dc, 0.72);
 officeCeiling.position.set(0, 12, 2);
-const officeDeskFill = new THREE.PointLight(0xffc090, 0.28, 12, 2);
+const officeDeskFill = new THREE.PointLight(0xffd4a8, 0.75, 16, 1.6);
 officeDeskFill.position.set(0, 2.2, 0);
 officeLights.add(officeAmbient, officeHemi, officeCeiling, officeDeskFill, officeAccentLights);
 
@@ -199,6 +848,7 @@ const lipControllers = new Map();
 let worldData = null;
 const introCamera = {
   active: false,
+  reverse: false,
   progress: 0,
   duration: 4.8,
   mode: "exterior",
@@ -206,6 +856,7 @@ const introCamera = {
   end: new THREE.Vector3(),
   lookAt: new THREE.Vector3(),
   lookAtEnd: new THREE.Vector3(),
+  onComplete: null,
 };
 const EXECUTIVE_CHAIR_PATTERN = /executive[_ ]office[_ ]chair/i;
 const tempLookAt = new THREE.Vector3();
@@ -226,6 +877,17 @@ function stopTimer() {
 
 function easeInOutCubic(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function easeInOutQuint(t) {
+  return t < 0.5
+    ? 16 * t * t * t * t * t
+    : 1 - Math.pow(-2 * t + 2, 5) / 2;
+}
+
+function clampDelta(delta) {
+  // Prevent hitch jumps after load/tab switch without slowing high-FPS playback
+  return THREE.MathUtils.clamp(delta, 0, 1 / 24);
 }
 
 function setupIntroCamera(center, size, floorY, span) {
@@ -308,7 +970,7 @@ function setupOfficeIntroCamera() {
 }
 
 function applyIntroCameraView(alpha) {
-  const t = easeInOutCubic(THREE.MathUtils.clamp(alpha, 0, 1));
+  const t = easeInOutQuint(THREE.MathUtils.clamp(alpha, 0, 1));
   camera.position.lerpVectors(introCamera.start, introCamera.end, t);
 
   if (introCamera.mode === "office") {
@@ -337,6 +999,7 @@ function startIntroCinematic() {
   hideQuizOverlay();
   setGameplayUiVisible(false);
   applyIntroCameraView(0);
+  playMusicTrack("intro");
 }
 
 function startOfficeIntroCinematic() {
@@ -349,18 +1012,120 @@ function startOfficeIntroCinematic() {
   setGameplayUiVisible(false);
   setStatus("", false);
   applyIntroCameraView(0);
+  playOfficeAnimationMusic();
 }
 
 function startQuestionFlow() {
   state.currentQuestionIndex = 0;
   state.showDialogue = true;
   state.introPlaying = false;
+  state.conversationPhase = "manager-intro";
+  state.userIntro = "";
   panel.style.display = "block";
   setGameplayUiVisible(false);
-  renderQuestion(0);
+  startManagerGreeting();
+}
+
+function startManagerGreeting() {
+  state.showDialogue = true;
+  state.conversationPhase = "manager-intro";
+  hideResponsePanel();
+  setIntroResponseVisible(false);
+  choices.innerHTML = "";
+  updateSpeakerUi("Manager", "Meet your Manager", "manager", "Manager");
+  showQuizOverlay();
+  updateDialoguePanelPosition();
+  dialogue.textContent = "";
+  startTypewriter(MANAGER_INTRO_TEXT, "Manager", "manager", () => {
+    state.conversationPhase = "user-intro";
+    setIntroResponseVisible(true);
+    showResponsePanel();
+  });
+}
+
+function submitUserIntro() {
+  if (state.conversationPhase !== "user-intro") return;
+
+  const intro = userIntroInput?.value.trim() || "";
+  if (intro.length < 2) return;
+
+  state.userIntro = intro;
+  hideResponsePanel();
+  setIntroResponseVisible(false);
+  userIntroInput.value = "";
+  syncIntroNextEnabled();
+  startReadyConfirmation();
+}
+
+function startReadyConfirmation() {
+  state.conversationPhase = "ready-confirm";
+  hideResponsePanel();
+  setIntroResponseVisible(false);
+  choices.innerHTML = "";
+  updateSpeakerUi("Manager", "Meet your Manager", "manager", "Manager");
+  showQuizOverlay();
+  updateDialoguePanelPosition();
+  dialogue.textContent = "";
+  startTypewriter(MANAGER_READY_TEXT, "Manager", "manager", showReadyChoices);
+}
+
+function showReadyChoices() {
+  choices.innerHTML = "";
+
+  const yesBtn = document.createElement("button");
+  yesBtn.className = "choice-btn";
+  yesBtn.textContent = "Yes";
+  yesBtn.addEventListener("click", () => {
+    stopTypewriter();
+    state.conversationPhase = "assessment";
+    renderQuestion(0);
+  });
+
+  const noBtn = document.createElement("button");
+  noBtn.className = "choice-btn";
+  noBtn.textContent = "No";
+  noBtn.addEventListener("click", () => {
+    stopTypewriter();
+    resetToTitleScreen();
+  });
+
+  choices.appendChild(yesBtn);
+  choices.appendChild(noBtn);
+  showResponsePanel();
+}
+
+function startCompletionGreeting() {
+  stopTimer();
+  state.conversationPhase = "completion";
+  state.showDialogue = true;
+  panel.style.display = "block";
+  hideResponsePanel();
+  setIntroResponseVisible(false);
+  choices.innerHTML = "";
+  updateSpeakerUi("Manager", "Assessment Complete", "manager", "Manager");
+  showQuizOverlay();
+  updateDialoguePanelPosition();
+  dialogue.textContent = "";
+  startTypewriter(MANAGER_COMPLETION_TEXT, "Manager", "manager", showCompletionAction);
+}
+
+function showCompletionAction() {
+  choices.innerHTML = "";
+
+  const viewResultsBtn = document.createElement("button");
+  viewResultsBtn.className = "choice-btn";
+  viewResultsBtn.textContent = "View Results";
+  viewResultsBtn.addEventListener("click", () => {
+    stopTypewriter();
+    beginResultsPresentation();
+  });
+
+  choices.appendChild(viewResultsBtn);
+  showResponsePanel();
 }
 
 function finishOfficeIntroCinematic() {
+  stopOfficeAnimationMusic();
   applyIntroCameraView(1);
   introCamera.active = false;
   introCamera.progress = 1;
@@ -394,7 +1159,19 @@ function finishIntroCinematic() {
 function updateIntroCinematic(delta) {
   if (!introCamera.active) return false;
 
-  const step = Math.min(delta, 1 / 30);
+  const step = clampDelta(delta);
+
+  if (introCamera.reverse) {
+    introCamera.progress -= step / introCamera.duration;
+    if (introCamera.progress <= 0) {
+      applyIntroCameraView(0);
+      finishIntroCinematicReverse();
+      return true;
+    }
+    applyIntroCameraView(introCamera.progress);
+    return false;
+  }
+
   introCamera.progress += step / introCamera.duration;
   if (introCamera.progress >= 1) {
     applyIntroCameraView(1);
@@ -404,6 +1181,18 @@ function updateIntroCinematic(delta) {
 
   applyIntroCameraView(introCamera.progress);
   return false;
+}
+
+function finishIntroCinematicReverse() {
+  stopOfficeAnimationMusic();
+  introCamera.active = false;
+  introCamera.reverse = false;
+  introCamera.progress = 0;
+  state.introPlaying = false;
+
+  const callback = introCamera.onComplete;
+  introCamera.onComplete = null;
+  callback?.();
 }
 
 function applyStats(scoreImpact) {
@@ -508,8 +1297,10 @@ function setupNpcAnimations(id, model, gltf) {
   }
 
   const mixer = new THREE.AnimationMixer(model);
-  const idleClip = findClip(gltf.animations, /idle|stand|neutral/i) || gltf.animations[0];
-  const walkClip = findClip(gltf.animations, /walk|run|move/i);
+  const idleClip =
+    findClip(gltf.animations, /sit|seated|sitting|idle|stand|neutral|breath|pose/i) ||
+    gltf.animations[0];
+  const walkClip = findClip(gltf.animations, /walk|run|move|loco/i);
 
   const animator = {
     id,
@@ -528,12 +1319,29 @@ function setupNpcAnimations(id, model, gltf) {
 
 function playNpcClip(animator, clip, loop = true) {
   if (!animator || !clip) return;
+
   const next = animator.mixer.clipAction(clip);
+  next.clampWhenFinished = !loop;
+  next.setEffectiveTimeScale(1);
+  next.setEffectiveWeight(1);
+
   if (animator.activeAction && animator.activeAction !== next) {
-    animator.activeAction.fadeOut(0.2);
+    animator.activeAction.fadeOut(0.45);
+    next.reset().setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity).fadeIn(0.45).play();
+  } else if (animator.activeAction !== next) {
+    next.reset().setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity).fadeIn(0.35).play();
   }
-  next.reset().setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce).fadeIn(0.2).play();
+
   animator.activeAction = next;
+}
+
+function updateNpcAnimators(delta) {
+  const dt = clampDelta(delta);
+  for (const animator of npcAnimators.values()) {
+    if (!animator) continue;
+    if (animator.moveJob?.step) animator.moveJob.step(dt);
+    animator.mixer.update(dt);
+  }
 }
 
 function moveNpcTo(id, x, z, floorY, rotationY) {
@@ -585,14 +1393,6 @@ function moveNpcTo(id, x, z, floorY, rotationY) {
       animator.moveJob = null;
     }
   };
-}
-
-function updateNpcAnimators(delta) {
-  for (const animator of npcAnimators.values()) {
-    if (!animator) continue;
-    if (animator.moveJob?.step) animator.moveJob.step(delta);
-    animator.mixer.update(delta);
-  }
 }
 
 function alignNpc(model, x, z, floorY, rotationY, targetHeight = 1.72) {
@@ -715,6 +1515,8 @@ async function ensureManagerModel() {
         prepareModelMeshes(npcs.manager);
         prepareManagerMaterials(npcs.manager);
         discoverLipSync(npcs.manager, "manager");
+        setupNpcAnimations("manager", npcs.manager, gltf);
+        managerAnimReady = true;
         scene.add(npcs.manager);
         return npcs.manager;
       })
@@ -750,7 +1552,7 @@ function setupManagerOnChair() {
     if (managerChairLight.target) officeLights.remove(managerChairLight.target);
   }
   const chairLightSize = chairWorld.getSize(new THREE.Vector3());
-  managerChairLight = new THREE.DirectionalLight(0xffe6cc, 0.35);
+  managerChairLight = new THREE.DirectionalLight(0xfff0dc, 0.75);
   managerChairLight.position.set(
     chairCenter.x + 0.4,
     chairWorld.max.y + 1.6,
@@ -793,12 +1595,16 @@ function stopTypewriter() {
     typewriterId = null;
   }
   typewriterCompleteCallback = null;
+  stopSpeaking();
+  stopVoiceCommands();
   stopAllLipSync();
 }
 
 function finishTypewriter(lipNpc) {
   dialogue.querySelector(".cursor")?.remove();
-  setLipSpeaking(lipNpc, false);
+  if (!isSpeechActive()) {
+    setLipSpeaking(lipNpc, false);
+  }
 
   const onComplete = typewriterCompleteCallback;
   typewriterCompleteCallback = null;
@@ -818,13 +1624,31 @@ function startTypewriter(text, speaker, npcId, onComplete) {
     return;
   }
 
+  let typewriterDone = false;
+  let speechDone = !voiceEnabled || !window.speechSynthesis;
+
+  const tryFinishTypewriter = () => {
+    if (!typewriterDone || !speechDone) return;
+    finishTypewriter(lipNpc);
+  };
+
   setLipSpeaking(lipNpc, true);
+  if (voiceEnabled && window.speechSynthesis) {
+    speakText(message, {
+      npcId: lipNpc,
+      onEnd: () => {
+        speechDone = true;
+        tryFinishTypewriter();
+      },
+    });
+  }
   dialogue.innerHTML = '<span class="typed-text"></span><span class="cursor"></span>';
 
   const typed = dialogue.querySelector(".typed-text");
   if (!typed) {
     dialogue.textContent = message;
-    finishTypewriter(lipNpc);
+    typewriterDone = true;
+    tryFinishTypewriter();
     return;
   }
 
@@ -835,7 +1659,8 @@ function startTypewriter(text, speaker, npcId, onComplete) {
     if (index >= message.length) {
       clearInterval(typewriterId);
       typewriterId = null;
-      finishTypewriter(lipNpc);
+      typewriterDone = true;
+      tryFinishTypewriter();
       return;
     }
 
@@ -846,28 +1671,28 @@ function startTypewriter(text, speaker, npcId, onComplete) {
 
 function getManagerHeadScreenPosition() {
   const fallback = {
-    x: window.innerWidth * 0.72,
-    y: window.innerHeight * 0.38,
+    x: window.innerWidth * 0.58,
+    y: window.innerHeight * 0.34,
   };
 
   if (!npcs.manager?.visible) {
     return fallback;
   }
 
-  npcs.manager.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(npcs.manager);
-  if (box.isEmpty()) {
+  // Cheap world position from model root — avoid rebuilding Box3 every frame
+  npcs.manager.getWorldPosition(managerHeadPos);
+  const scaleY = npcs.manager.scale.y || 1;
+  managerHeadPos.x += 0.28 * scaleY;
+  managerHeadPos.y += 1.45 * scaleY;
+  managerHeadScratch.copy(managerHeadPos).project(camera);
+
+  if (managerHeadScratch.z > 1) {
     return fallback;
   }
 
-  const size = box.getSize(new THREE.Vector3());
-  box.getCenter(managerHeadPos);
-  managerHeadPos.y = box.max.y - size.y * 0.06;
-  managerHeadPos.project(camera);
-
   return {
-    x: (managerHeadPos.x * 0.5 + 0.5) * window.innerWidth,
-    y: (-managerHeadPos.y * 0.5 + 0.5) * window.innerHeight - 18,
+    x: (managerHeadScratch.x * 0.5 + 0.5) * window.innerWidth,
+    y: (-managerHeadScratch.y * 0.5 + 0.5) * window.innerHeight,
   };
 }
 
@@ -875,38 +1700,326 @@ function updateDialoguePanelPosition() {
   if (!state.showDialogue || !quizRightAnchor) return;
 
   const { x, y } = getManagerHeadScreenPosition();
-  const clampedX = THREE.MathUtils.clamp(x, window.innerWidth * 0.52, window.innerWidth * 0.92);
-  const clampedY = THREE.MathUtils.clamp(y, window.innerHeight * 0.14, window.innerHeight * 0.72);
+  const cardW = quizRightAnchor.offsetWidth || 360;
+  const margin = 16;
+  const left = THREE.MathUtils.clamp(
+    x + 18,
+    window.innerWidth * 0.48,
+    window.innerWidth - cardW - margin
+  );
+  const top = THREE.MathUtils.clamp(
+    y - 70,
+    margin + 8,
+    window.innerHeight * 0.28
+  );
 
-  quizRightAnchor.style.left = `${clampedX}px`;
-  quizRightAnchor.style.top = `${clampedY}px`;
+  // Skip tiny DOM writes — they cause animation hitching
+  if (
+    Math.abs(left - lastDialogueAnchor.x) < 0.75 &&
+    Math.abs(top - lastDialogueAnchor.y) < 0.75
+  ) {
+    return;
+  }
+
+  lastDialogueAnchor.x = left;
+  lastDialogueAnchor.y = top;
+  quizRightAnchor.style.left = `${left}px`;
+  quizRightAnchor.style.top = `${top}px`;
 }
 
-function endGame() {
+function getWorkplaceStrength(key, score) {
+  if (key === "N") {
+    return score <= 2
+      ? "Calm decision-making and resilience during high-pressure moments"
+      : "Heightened awareness of risk and attention to detail under uncertainty";
+  }
+  return workplaceStrengths[key];
+}
+
+function getGrowthSuggestion(key, score) {
+  if (key === "N") {
+    return score >= 4
+      ? growthSuggestions.N
+      : "Maintain your composure — consider mentoring others during stressful project phases.";
+  }
+  return growthSuggestions[key];
+}
+
+function getTraitLevel(score) {
+  if (score >= 4) return "high";
+  if (score >= 3) return "moderate";
+  return "low";
+}
+
+function getTraitLevelLabel(score) {
+  const level = getTraitLevel(score);
+  if (level === "high") return "Strong";
+  if (level === "moderate") return "Moderate";
+  return "Emerging";
+}
+
+function buildConciseSummary(dominant, average) {
+  const style =
+    average >= 3.5 ? "proactive" : average >= 2.5 ? "balanced" : "focused";
+  return `${traitNames[dominant[0]]} leads your profile — a ${style}, workplace-ready style.`;
+}
+
+function buildConciseFeedback(report) {
+  const strong = report.traitRows
+    .filter((trait) => trait.score >= 4)
+    .map((trait) => trait.name);
+  const emerging = report.traitRows
+    .filter((trait) => trait.score <= 2)
+    .map((trait) => trait.name);
+
+  let paragraph = strong.length
+    ? `You consistently show ${strong.join(" and ").toLowerCase()}, making you dependable in structured team settings.`
+    : "You take a measured, context-driven approach across workplace scenarios.";
+
+  if (emerging.length) {
+    paragraph += ` ${emerging.join(" and ")} may feel less natural, but small intentional shifts can broaden your impact.`;
+  }
+
+  const managerQuote = report.managerNote
+    .replace(/^Hanif's feedback:\s*/i, "")
+    .replace(/^"/, "")
+    .replace(/"$/, "");
+  paragraph += ` ${managerQuote}`;
+
+  return paragraph;
+}
+
+function getOverallPerformancePercent(scores) {
+  const values = Object.values(scores);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return Math.round((total / (values.length * TRAIT_MAX_SCORE)) * 100);
+}
+
+function renderRingMarkup(id, pct, options = {}) {
+  const {
+    size = 132,
+    radius = 52,
+    stroke = 10,
+    label = "",
+    modifier = "",
+  } = options;
+  const circumference = 2 * Math.PI * radius;
+  const targetOffset = circumference - (pct / 100) * circumference;
+  const gradId = `ringGrad-${id}`;
+
+  return (
+    `<div class="analytics-ring ${modifier}">` +
+    `<svg width="${size}" height="${size}" viewBox="0 0 120 120" aria-hidden="true">` +
+    `<defs>` +
+    `<linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="0%">` +
+    `<stop offset="0%" stop-color="#e07a1f" />` +
+    `<stop offset="100%" stop-color="#ffb347" />` +
+    `</linearGradient>` +
+    `</defs>` +
+    `<circle class="analytics-ring-bg" cx="60" cy="60" r="${radius}" stroke-width="${stroke}" />` +
+    `<circle class="analytics-ring-fill" cx="60" cy="60" r="${radius}" stroke-width="${stroke}" ` +
+    `stroke="url(#${gradId})" stroke-dasharray="${circumference}" stroke-dashoffset="${circumference}" ` +
+    `data-offset="${targetOffset}" />` +
+    `</svg>` +
+    `<div class="analytics-ring-label">` +
+    `<span class="analytics-ring-pct">${pct}%</span>` +
+    (label ? `<span class="analytics-ring-trait">${label}</span>` : "") +
+    `</div>` +
+    `</div>`
+  );
+}
+
+function animateAnalyticsRings(container) {
+  requestAnimationFrame(() => {
+    container?.querySelectorAll(".analytics-ring-fill").forEach((ring) => {
+      if (ring.dataset.offset) {
+        ring.style.strokeDashoffset = ring.dataset.offset;
+      }
+    });
+  });
+}
+
+function renderOverallPerformanceRing(overallPct) {
+  analyticsDominant.innerHTML = renderRingMarkup("overall", overallPct, {
+    size: 132,
+    radius: 52,
+    stroke: 10,
+    label: "Overall Performance",
+    modifier: "analytics-ring--hero",
+  });
+  animateAnalyticsRings(analyticsDominant);
+}
+
+function renderTraitRings(traitRows) {
+  analyticsTraits.innerHTML = traitRows
+    .map((trait) => {
+      const pct = Math.round((trait.score / trait.max) * 100);
+      return (
+        `<div class="trait-ring-card">` +
+        renderRingMarkup(`trait-${trait.key}`, pct, {
+          size: 108,
+          radius: 48,
+          stroke: 9,
+          modifier: "analytics-ring--sm",
+        }) +
+        `<span class="trait-ring-name">${trait.name}</span>` +
+        `<span class="trait-ring-level">${trait.level}</span>` +
+        `</div>`
+      );
+    })
+    .join("");
+
+  animateAnalyticsRings(analyticsTraits);
+}
+
+function buildPersonalityReport() {
+  const scores = {
+    O: state.stats.O,
+    C: state.stats.C,
+    E: state.stats.E,
+    A: state.stats.A,
+    N: state.stats.N,
+  };
+
+  const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  const dominant = ranked[0];
+  const lowest = ranked[ranked.length - 1];
+  const average = ranked.reduce((sum, [, score]) => sum + score, 0) / ranked.length;
+  const profileSummary = buildConciseSummary(dominant, average);
+
+  const traitRows = Object.entries(scores).map(([key, score]) => ({
+    key,
+    name: traitNames[key],
+    score,
+    max: TRAIT_MAX_SCORE,
+    level: getTraitLevelLabel(score),
+    feedback: traitFeedback[key][getTraitLevel(score)],
+  }));
+
+  const strengths = ranked
+    .slice(0, 2)
+    .map(([key, score]) => `<li>${getWorkplaceStrength(key, score)}</li>`)
+    .join("");
+
+  const growth = ranked
+    .slice(-2)
+    .reverse()
+    .map(([key, score]) => `<li>${getGrowthSuggestion(key, score)}</li>`)
+    .join("");
+
+  const managerNote =
+    dominant[1] >= 4
+      ? `Hanif's feedback: "Your ${traitNames[dominant[0]]} stood out — strong fit for roles needing ${dominant[0] === "O" ? "innovation" : dominant[0] === "C" ? "ownership" : dominant[0] === "E" ? "collaboration" : dominant[0] === "A" ? "team alignment" : "composure"}."`
+      : `Hanif's feedback: "Solid overall profile — sharpening ${traitNames[lowest[0]]} will boost cross-team effectiveness."`;
+
+  const report = {
+    scores,
+    dominant,
+    overallPerformance: getOverallPerformancePercent(scores),
+    profileSummary,
+    traitRows,
+    strengthsHtml: strengths,
+    growthHtml: growth,
+    managerNote,
+  };
+
+  report.feedbackParagraph = buildConciseFeedback(report);
+  return report;
+}
+
+function renderAnalyticsPanel(report) {
+  analyticsTitle.textContent = "Your Personality Analytics";
+  analyticsSubtitle.textContent = report.profileSummary;
+
+  renderOverallPerformanceRing(report.overallPerformance);
+  renderTraitRings(report.traitRows);
+
+  analyticsFeedback.innerHTML =
+    `<h3>Trait Feedback</h3><p>${report.feedbackParagraph}</p>`;
+
+  analyticsWorkplace.innerHTML =
+    `<h3>Workplace Strengths</h3><ul>${report.strengthsHtml}</ul>`;
+
+  analyticsGrowth.innerHTML =
+    `<h3>Growth Recommendations</h3><ul>${report.growthHtml}</ul>`;
+}
+
+function setupResultsCamera() {
+  if (!worldData) return;
+
+  const chair = getOfficeChairWorldTarget();
+  const { floorY } = worldData;
+
+  if (chair) {
+    camera.position.set(
+      chair.center.x - Math.max(chair.size.x * 2.1, 1.4),
+      floorY + 1.32,
+      chair.center.z + chair.size.z * 0.55
+    );
+    camera.lookAt(
+      chair.center.x + chair.size.x * 0.15,
+      chair.center.y + chair.size.y * 0.28,
+      chair.center.z - chair.size.z * 0.05
+    );
+    return;
+  }
+
+  applyIntroCameraView(0.22);
+}
+
+function showAnalyticsOverlay(report) {
+  setupResultsCamera();
+  setupManagerOnChair();
+  if (npcs.manager) npcs.manager.visible = true;
+
+  panel.style.display = "block";
+  hideQuizOverlay();
+  resultScreen.classList.remove("screen-visible");
+  renderAnalyticsPanel(report);
+  analyticsOverlay?.classList.add("visible");
+  setGameplayUiVisible(false);
+  setStatus("Review your analytics", false);
+  playMusicTrack("victory");
+}
+
+function startOfficeOutroCinematic(onComplete) {
+  setupOfficeIntroCamera();
+  flushClockDelta();
+  introCamera.active = true;
+  introCamera.reverse = true;
+  introCamera.progress = 1;
+  introCamera.onComplete = onComplete;
+  state.introPlaying = true;
+  state.showDialogue = false;
+  hideQuizOverlay();
+  hideAnalyticsOverlay();
+  setIntroResponseVisible(false);
+  setGameplayUiVisible(false);
+  applyIntroCameraView(1);
+  playOfficeAnimationMusic();
+}
+
+function beginResultsPresentation() {
   state.isPlaying = false;
   state.awaitingPlay = false;
-  state.showDialogue = false;
+  state.conversationPhase = "results";
   stopTimer();
   stopTypewriter();
   panel.style.display = "block";
-  hideQuizOverlay();
-  setGameplayUiVisible(false);
 
-  const scores = { O: state.stats.O, C: state.stats.C, E: state.stats.E, A: state.stats.A, N: state.stats.N };
-  const dominant = Object.entries(scores).reduce((best, [trait, score]) =>
-    score > best[1] ? [trait, score] : best
-  , ["O", 0]);
+  const report = buildPersonalityReport();
+  state.lastReport = report;
 
-  resultTitle.textContent = "Your Personality Profile";
-  resultSummary.textContent =
-    `Openness: ${scores.O}/5\n` +
-    `Conscientiousness: ${scores.C}/5\n` +
-    `Extraversion: ${scores.E}/5\n` +
-    `Agreeableness: ${scores.A}/5\n` +
-    `Neuroticism: ${scores.N}/5\n\n` +
-    `Dominant trait: ${traitNames[dominant[0]]}`;
-  showScreen(resultScreen);
-  setStatus("Assessment complete", false);
+  setActiveEnvironment("office");
+  setupManagerOnChair();
+
+  startOfficeOutroCinematic(() => {
+    showAnalyticsOverlay(report);
+  });
+}
+
+function endGame() {
+  beginResultsPresentation();
 }
 
 function renderQuestion(index) {
@@ -917,9 +2030,11 @@ function renderQuestion(index) {
   }
 
   state.showDialogue = true;
+  state.conversationPhase = "assessment";
   state.currentQuestionIndex = index;
   panel.style.display = "block";
   hideResponsePanel();
+  setIntroResponseVisible(false);
   updateSpeakerUi("Manager", scenario.factor, "manager", scenario.factor);
   choices.innerHTML = "";
 
@@ -932,7 +2047,7 @@ function renderQuestion(index) {
       applyStats(option.score_impact);
 
       if (index >= scenarios.length - 1) {
-        endGame();
+        startCompletionGreeting();
         return;
       }
 
@@ -968,8 +2083,8 @@ function setActiveEnvironment(mode) {
 
   exteriorLights.visible = mode === "exterior";
   officeLights.visible = mode === "office";
-  scene.background.set(mode === "office" ? 0x140c08 : 0x10141b);
-  renderer.toneMappingExposure = mode === "office" ? 0.78 : 1;
+  scene.background.set(mode === "office" ? 0x1c120c : 0x10141b);
+  renderer.toneMappingExposure = mode === "office" ? 1.15 : 1;
 }
 
 function setupExteriorWorld(box) {
@@ -993,8 +2108,12 @@ function setupOfficeWorld(box) {
 function prepareModelMeshes(model) {
   model.traverse((child) => {
     if (child.isMesh) {
-      child.castShadow = true;
-      child.receiveShadow = true;
+      child.castShadow = false;
+      child.receiveShadow = false;
+      child.frustumCulled = true;
+      if (child.geometry && !child.geometry.boundingSphere) {
+        child.geometry.computeBoundingSphere();
+      }
     }
   });
 }
@@ -1044,7 +2163,7 @@ function syncOfficeAccentLights(model) {
 
     const pos = new THREE.Vector3();
     child.getWorldPosition(pos);
-    const accent = new THREE.PointLight(0xff7722, 2.8, 9, 1.8);
+    const accent = new THREE.PointLight(0xff8833, 3.6, 11, 1.6);
     accent.position.copy(pos);
     officeAccentLights.add(accent);
   });
@@ -1058,7 +2177,7 @@ function syncOfficeAccentLights(model) {
     ];
 
     for (const [x, y, z] of fallbackPositions) {
-      const accent = new THREE.PointLight(0xff7722, 2.4, 10, 1.8);
+      const accent = new THREE.PointLight(0xff8833, 3.2, 12, 1.6);
       accent.position.set(x, y, z);
       officeAccentLights.add(accent);
     }
@@ -1141,6 +2260,8 @@ function beginOpeningSequence() {
   stopTimer();
   state.isPlaying = false;
   state.showDialogue = false;
+  state.conversationPhase = "idle";
+  state.userIntro = "";
   state.stats = { ...initialStats };
   state.currentQuestionIndex = 0;
   panel.style.display = "none";
@@ -1170,6 +2291,8 @@ async function startGame() {
     state.isPlaying = true;
     state.awaitingPlay = false;
     state.showDialogue = false;
+    state.conversationPhase = "idle";
+    state.userIntro = "";
     state.currentQuestionIndex = 0;
 
     setupOfficeIntroCamera();
@@ -1199,26 +2322,94 @@ async function startGame() {
 
 function resetToTitleScreen() {
   stopTimer();
+  stopTypewriter();
+  stopVoiceCommands();
+  stopSpeaking();
+  stopOfficeAnimationMusic();
   state.isPlaying = false;
   state.introPlaying = false;
   state.awaitingPlay = true;
   introCamera.active = false;
+  introCamera.reverse = false;
+  introCamera.onComplete = null;
   introCamera.progress = 1;
   state.showDialogue = false;
+  state.conversationPhase = "idle";
+  state.userIntro = "";
   state.stats = { ...initialStats };
   state.currentQuestionIndex = 0;
+  state.lastReport = null;
   panel.style.display = "none";
+  hideAnalyticsOverlay();
+  setIntroResponseVisible(false);
   setGameplayUiVisible(false);
   activateExteriorTitleView();
   showScreen(titleScreen);
+  playMusicTrack("intro");
 }
 
 playBtn.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
+  musicUnlocked = true;
+  stopAllMusic();
   startGame();
 });
 restartBtn.addEventListener("click", resetToTitleScreen);
+
+analyticsFinishBtn?.addEventListener("click", resetToTitleScreen);
+
+musicToggleBtn?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  musicUnlocked = true;
+  setMusicEnabled(!musicEnabled);
+});
+
+voiceToggleBtn?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  musicUnlocked = true;
+  setVoiceEnabled(!voiceEnabled);
+});
+
+document.addEventListener(
+  "click",
+  (e) => {
+    const btn = e.target.closest("button");
+    if (!btn || btn.disabled) return;
+    playButtonClick();
+  },
+  true
+);
+
+window.addEventListener(
+  "pointerdown",
+  () => {
+    if (!musicUnlocked && musicEnabled) {
+      unlockAndPlayMusic();
+    }
+  },
+  { once: true, capture: true }
+);
+
+syncMusicToggleUi();
+syncVoiceToggleUi();
+
+userIntroInput?.addEventListener("input", () => {
+  introSpeechBase = userIntroInput?.value || "";
+  syncIntroNextEnabled();
+});
+userIntroInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    submitUserIntro();
+  }
+});
+introNextBtn?.addEventListener("click", (e) => {
+  e.preventDefault();
+  submitUserIntro();
+});
 
 const loader = new GLTFLoader();
 
@@ -1265,7 +2456,7 @@ window.addEventListener("resize", () => {
 
 function animate() {
   requestAnimationFrame(animate);
-  const delta = clock.getDelta();
+  const delta = clampDelta(clock.getDelta());
 
   if (introCamera.active) {
     updateIntroCinematic(delta);

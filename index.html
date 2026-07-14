@@ -55,135 +55,232 @@
         display: block;
       }
 
-      .quiz-left {
-        position: fixed;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        width: min(420px, 42vw);
-        padding: 24px 20px 24px 24px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        pointer-events: none;
-        opacity: 0;
-        transform: translateX(-32px);
-        z-index: 101;
-        background: linear-gradient(90deg, rgba(6, 10, 20, 0.88) 0%, rgba(6, 10, 20, 0.62) 72%, transparent 100%);
-        transition:
-          opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1),
-          transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-      }
-
-      .quiz-left.response-visible {
-        opacity: 1;
-        transform: translateX(0);
-        pointer-events: auto;
-      }
-
-      .quiz-left-label {
-        margin: 0 0 14px;
-        font-family: "Segoe UI", Arial, sans-serif;
-        font-size: 12px;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: rgba(180, 205, 255, 0.72);
-      }
-
       .quiz-right-anchor {
         position: fixed;
-        left: 72%;
-        top: 38%;
-        width: min(400px, 36vw);
+        left: 58%;
+        top: 14%;
+        width: min(520px, 46vw);
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
         pointer-events: auto;
-        transform: translate(-50%, -100%);
-        transition: top 0.12s ease, left 0.12s ease;
+        transform: none;
+        transition: top 0.08s linear, left 0.08s linear;
         z-index: 101;
+      }
+
+      .quiz-response {
+        opacity: 0;
+        transform: translateY(14px);
+        pointer-events: none;
+        padding: 14px 16px 16px;
+        border-radius: 16px;
+        background:
+          linear-gradient(145deg, rgba(255, 214, 170, 0.1), transparent 45%),
+          linear-gradient(165deg, rgba(22, 17, 14, 0.96), rgba(10, 8, 7, 0.98));
+        border: 1px solid rgba(232, 176, 110, 0.5);
+        box-shadow:
+          0 18px 40px rgba(0, 0, 0, 0.55),
+          0 0 22px rgba(255, 140, 60, 0.1),
+          inset 0 1px 0 rgba(255, 230, 190, 0.12);
+        backdrop-filter: blur(10px);
+        transition:
+          opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+          transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .quiz-response.response-visible {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+
+      .quiz-response-label {
+        margin: 0 0 12px;
+        font-family: "Segoe UI", Arial, sans-serif;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #ffd6aa;
+      }
+
+      .intro-response {
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .intro-response.visible {
+        display: flex;
+      }
+
+      #user-intro-input {
+        width: 100%;
+        min-height: 88px;
+        resize: vertical;
+        box-sizing: border-box;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(232, 176, 110, 0.4);
+        background: rgba(12, 10, 9, 0.88);
+        color: #f3e8d8;
+        font-family: "Segoe UI", Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        outline: none;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      #user-intro-input::placeholder {
+        color: rgba(243, 232, 216, 0.45);
+      }
+
+      #user-intro-input:focus {
+        border-color: rgba(240, 168, 90, 0.85);
+        box-shadow: 0 0 0 3px rgba(240, 168, 90, 0.15);
+      }
+
+      #intro-next-btn {
+        width: auto;
+        align-self: flex-end;
+        min-width: 120px;
+        padding: 11px 22px;
+        text-align: center;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #fff8ee;
+        background: linear-gradient(135deg, rgba(224, 122, 31, 0.92), rgba(196, 90, 18, 0.9));
+        border: 1px solid rgba(255, 200, 130, 0.55);
+        border-radius: 12px;
+        cursor: pointer;
+        font-family: "Segoe UI", Arial, sans-serif;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+      }
+
+      #intro-next-btn:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px rgba(196, 90, 18, 0.35);
+      }
+
+      #intro-next-btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
       }
 
       .dialogue-card {
         display: none;
-        border-radius: 16px;
-        overflow: hidden;
-        background: linear-gradient(160deg, rgba(14, 22, 42, 0.98), rgba(8, 12, 26, 0.96));
-        border: 1px solid rgba(118, 162, 255, 0.42);
+        position: relative;
+        border-radius: 20px 20px 20px 6px;
+        overflow: visible;
+        background:
+          linear-gradient(145deg, rgba(255, 214, 170, 0.12), transparent 42%),
+          linear-gradient(165deg, rgba(28, 22, 18, 0.94), rgba(12, 10, 9, 0.96));
+        border: 1px solid rgba(232, 176, 110, 0.45);
         box-shadow:
-          0 18px 44px rgba(0, 0, 0, 0.5),
-          0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+          0 22px 48px rgba(0, 0, 0, 0.55),
+          0 0 28px rgba(255, 140, 60, 0.12),
+          inset 0 1px 0 rgba(255, 230, 190, 0.14);
+        backdrop-filter: blur(10px);
         opacity: 0;
+      }
+
+      .dialogue-card::before {
+        content: "";
+        position: absolute;
+        left: -11px;
+        top: 34px;
+        width: 18px;
+        height: 18px;
+        background: rgba(18, 14, 12, 0.96);
+        border-left: 1px solid rgba(232, 176, 110, 0.45);
+        border-bottom: 1px solid rgba(232, 176, 110, 0.45);
+        transform: rotate(45deg);
+        z-index: 0;
       }
 
       .dialogue-card.visible {
         display: block;
-        animation: dialogueIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        animation: dialogueIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
       }
 
       @keyframes dialogueIn {
         from {
           opacity: 0;
-          transform: translateY(14px) scale(0.98);
+          transform: translateX(18px) scale(0.96);
         }
         to {
           opacity: 1;
-          transform: translateY(0) scale(1);
+          transform: translateX(0) scale(1);
         }
       }
 
       .dialogue-header {
+        position: relative;
+        z-index: 1;
         display: flex;
         align-items: center;
-        gap: 14px;
-        padding: 16px 18px 10px;
-        border-bottom: 1px solid rgba(145, 175, 255, 0.15);
+        gap: 12px;
+        padding: 14px 16px 10px;
+        border-bottom: 1px solid rgba(232, 176, 110, 0.18);
       }
 
       .speaker-avatar {
-        width: 52px;
-        height: 52px;
+        width: 44px;
+        height: 44px;
         border-radius: 50%;
         display: grid;
         place-items: center;
         font-weight: 700;
-        font-size: 20px;
-        color: #fff;
+        font-size: 18px;
+        color: #fff8ee;
         flex-shrink: 0;
-        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+        box-shadow:
+          0 0 0 2px rgba(255, 210, 150, 0.25),
+          0 6px 16px rgba(255, 120, 40, 0.35);
       }
 
       .speaker-avatar.customer { background: linear-gradient(135deg, #ff6b6b, #c92a2a); }
-      .speaker-avatar.agent { background: linear-gradient(135deg, #ffa94d, #e67700); }
+      .speaker-avatar.agent { background: linear-gradient(145deg, #ffb347, #e07a1f 55%, #c45a12); }
       .speaker-avatar.receptionist { background: linear-gradient(135deg, #4dabf7, #1864ab); }
 
       .speaker-meta h2 {
         margin: 0;
-        font-size: 18px;
-        color: #f3f7ff;
-        font-family: "Segoe UI", Arial, sans-serif;
+        font-size: 17px;
+        font-weight: 700;
+        color: #fff4e6;
+        font-family: Georgia, "Times New Roman", serif;
+        letter-spacing: 0.02em;
       }
 
       .speaker-role {
         display: inline-block;
-        margin-top: 4px;
+        margin-top: 5px;
         padding: 3px 10px;
         border-radius: 999px;
-        font-size: 11px;
-        letter-spacing: 0.04em;
+        font-size: 10px;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #dbe7ff;
-        background: rgba(109, 160, 255, 0.18);
-        border: 1px solid rgba(145, 175, 255, 0.28);
+        color: #ffe2b8;
+        background: rgba(255, 160, 70, 0.16);
+        border: 1px solid rgba(232, 176, 110, 0.35);
+        font-family: "Segoe UI", Arial, sans-serif;
       }
 
       .dialogue-body {
-        padding: 14px 18px 8px;
+        position: relative;
+        z-index: 1;
+        padding: 12px 16px 16px;
       }
 
       .dialogue-text {
         margin: 0;
-        min-height: 84px;
+        min-height: 72px;
         font-size: 15px;
-        line-height: 1.7;
-        color: #e8f0ff;
+        line-height: 1.65;
+        color: #f3e8d8;
         font-family: "Segoe UI", Arial, sans-serif;
         white-space: pre-wrap;
       }
@@ -196,7 +293,7 @@
         display: inline-block;
         width: 2px;
         height: 1em;
-        background: #6da0ff;
+        background: #f0a85a;
         margin-left: 2px;
         vertical-align: text-bottom;
         animation: blink 0.8s step-end infinite;
@@ -212,26 +309,26 @@
         padding: 0;
       }
 
-      .quiz-left.response-visible .choice-btn {
+      .quiz-response.response-visible .choice-btn {
         animation: choiceIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
       }
 
-      .quiz-left.response-visible .choice-btn:nth-child(1) {
+      .quiz-response.response-visible .choice-btn:nth-child(1) {
         animation-delay: 0.08s;
       }
 
-      .quiz-left.response-visible .choice-btn:nth-child(2) {
+      .quiz-response.response-visible .choice-btn:nth-child(2) {
         animation-delay: 0.16s;
       }
 
       @keyframes choiceIn {
         from {
           opacity: 0;
-          transform: translateX(-16px);
+          transform: translateY(12px);
         }
         to {
           opacity: 1;
-          transform: translateX(0);
+          transform: translateY(0);
         }
       }
 
@@ -256,12 +353,299 @@
         z-index: 1;
       }
 
+      #analytics-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 102;
+        pointer-events: none;
+      }
+
+      #analytics-overlay.visible {
+        display: block;
+        animation: analyticsFadeIn 0.65s ease forwards;
+      }
+
+      @keyframes analyticsFadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      .analytics-panel {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: min(780px, calc(92vw - 32px));
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+        padding: 24px 28px 22px;
+        border-radius: 20px;
+        pointer-events: auto;
+        font-family: "Segoe UI", Arial, sans-serif;
+        color: #f3e8d8;
+        background:
+          linear-gradient(145deg, rgba(255, 214, 170, 0.1), transparent 42%),
+          linear-gradient(165deg, rgba(22, 17, 14, 0.96), rgba(10, 8, 7, 0.98));
+        border: 1px solid rgba(232, 176, 110, 0.5);
+        box-shadow:
+          0 22px 48px rgba(0, 0, 0, 0.55),
+          0 0 28px rgba(255, 140, 60, 0.12),
+          inset 0 1px 0 rgba(255, 230, 190, 0.14);
+        backdrop-filter: blur(10px);
+        scrollbar-width: thin;
+        scrollbar-color: rgba(232, 176, 110, 0.45) transparent;
+      }
+
+      .analytics-panel h2 {
+        margin: 0 0 8px;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(20px, 2.2vw, 26px);
+        color: #fff4e6;
+        letter-spacing: 0.02em;
+        text-align: center;
+      }
+
+      .analytics-subtitle {
+        margin: 0 auto 20px;
+        max-width: 520px;
+        font-size: 13px;
+        line-height: 1.5;
+        color: rgba(243, 232, 216, 0.72);
+        text-align: center;
+      }
+
+      .analytics-hero {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 18px;
+      }
+
+      .analytics-ring {
+        position: relative;
+        width: 132px;
+        height: 132px;
+      }
+
+      .analytics-ring svg {
+        display: block;
+        transform: rotate(-90deg);
+      }
+
+      .analytics-ring-bg {
+        fill: none;
+        stroke: rgba(255, 255, 255, 0.08);
+        stroke-width: 10;
+      }
+
+      .analytics-ring-fill {
+        fill: none;
+        stroke-width: 10;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 1s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .analytics-ring--sm .analytics-ring-bg,
+      .analytics-ring--sm .analytics-ring-fill {
+        stroke-width: 9;
+      }
+
+      .analytics-ring-label {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        text-align: center;
+        padding: 0 12px;
+      }
+
+      .analytics-ring-pct {
+        font-weight: 700;
+        line-height: 1;
+        color: #fff8ee;
+        font-family: Georgia, "Times New Roman", serif;
+      }
+
+      .analytics-ring-trait {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #ffd6aa;
+        line-height: 1.3;
+      }
+
+      .analytics-ring--hero .analytics-ring-pct {
+        font-size: 30px;
+      }
+
+      .analytics-ring--hero .analytics-ring-trait {
+        font-size: 9px;
+        letter-spacing: 0.1em;
+      }
+
+      .analytics-ring--sm {
+        width: 108px;
+        height: 108px;
+      }
+
+      .analytics-ring--sm .analytics-ring-pct {
+        font-size: 18px;
+      }
+
+      .analytics-traits {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+
+      .trait-ring-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .trait-ring-name {
+        font-size: 12px;
+        font-weight: 700;
+        color: #ffe2b8;
+        text-align: center;
+        line-height: 1.25;
+      }
+
+      .trait-ring-level {
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: rgba(255, 210, 150, 0.85);
+        text-align: center;
+      }
+
+      @media (max-width: 640px) {
+        .analytics-traits {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 420px) {
+        .analytics-traits {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      .analytics-section {
+        margin-bottom: 16px;
+        padding-top: 14px;
+        border-top: 1px solid rgba(232, 176, 110, 0.18);
+      }
+
+      .analytics-feedback-section {
+        text-align: center;
+      }
+
+      .analytics-feedback-section h3 {
+        text-align: center;
+      }
+
+      .analytics-feedback-section p {
+        margin: 0;
+        max-width: 640px;
+        margin-inline: auto;
+        font-size: 13px;
+        line-height: 1.65;
+        color: rgba(243, 232, 216, 0.88);
+      }
+
+      .analytics-insights-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-bottom: 16px;
+      }
+
+      .analytics-insight-col {
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.22);
+        border: 1px solid rgba(232, 176, 110, 0.15);
+      }
+
+      .analytics-insight-col h3 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #ffd6aa;
+      }
+
+      .analytics-insight-col ul {
+        margin: 0;
+        padding-left: 16px;
+        display: grid;
+        gap: 5px;
+      }
+
+      .analytics-insight-col li {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.5;
+        color: rgba(243, 232, 216, 0.88);
+      }
+
+      @media (max-width: 640px) {
+        .analytics-insights-row {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .analytics-section h3 {
+        margin: 0 0 8px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #ffd6aa;
+      }
+
+      .analytics-section p,
+      .analytics-section li {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.6;
+        color: rgba(243, 232, 216, 0.88);
+      }
+
+      .analytics-section ul {
+        margin: 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .analytics-feedback-block {
+        display: none;
+      }
+
+      #analytics-finish-btn {
+        width: 100%;
+        margin-top: 6px;
+        text-align: center;
+      }
+
       #result-panel {
         position: fixed;
         left: 50%;
-        bottom: 24px;
-        transform: translateX(-50%);
-        width: min(520px, calc(100% - 24px));
+        top: 50%;
+        bottom: auto;
+        transform: translate(-50%, -50%);
+        width: min(780px, calc(92vw - 32px));
         pointer-events: auto;
       }
 
@@ -283,22 +667,28 @@
       .choice-btn,
       #restart-btn {
         width: 100%;
-        padding: 12px 14px;
+        padding: 13px 15px;
         text-align: left;
         font-size: 14px;
-        color: #f3f7ff;
-        background: linear-gradient(90deg, rgba(109, 160, 255, 0.12), rgba(109, 160, 255, 0.06));
-        border: 1px solid rgba(145, 175, 255, 0.35);
+        font-weight: 600;
+        line-height: 1.45;
+        color: #fff4e6;
+        background: linear-gradient(135deg, rgba(48, 34, 22, 0.95), rgba(28, 20, 14, 0.98));
+        border: 1px solid rgba(232, 176, 110, 0.45);
         border-radius: 12px;
         cursor: pointer;
-        transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+        box-shadow: inset 0 1px 0 rgba(255, 230, 190, 0.08);
+        transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
         font-family: "Segoe UI", Arial, sans-serif;
       }
 
       .choice-btn:hover,
       #restart-btn:hover {
-        background: linear-gradient(90deg, rgba(109, 160, 255, 0.28), rgba(109, 160, 255, 0.14));
-        border-color: rgba(160, 200, 255, 0.65);
+        background: linear-gradient(135deg, rgba(84, 52, 24, 0.98), rgba(52, 34, 18, 0.98));
+        border-color: rgba(255, 200, 130, 0.75);
+        box-shadow:
+          0 6px 16px rgba(196, 90, 18, 0.25),
+          inset 0 1px 0 rgba(255, 230, 190, 0.14);
         transform: translateY(-1px);
       }
 
@@ -478,6 +868,191 @@
         animation: none;
         transform: none;
       }
+
+      #music-toggle {
+        position: fixed;
+        top: 18px;
+        right: 18px;
+        z-index: 200;
+        width: 54px;
+        height: 54px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border-radius: 14px;
+        border: 2px solid rgba(212, 184, 118, 0.78);
+        background:
+          radial-gradient(circle at 30% 25%, rgba(255, 220, 150, 0.22), transparent 55%),
+          linear-gradient(145deg, rgba(48, 42, 28, 0.96), rgba(16, 14, 11, 0.94));
+        box-shadow:
+          0 10px 28px rgba(0, 0, 0, 0.45),
+          0 0 22px rgba(212, 184, 118, 0.22),
+          inset 0 1px 0 rgba(255, 236, 190, 0.18);
+        color: #f4e4b8;
+        cursor: pointer;
+        pointer-events: auto;
+        transition:
+          transform 0.2s ease,
+          border-color 0.2s ease,
+          box-shadow 0.2s ease,
+          color 0.2s ease;
+        animation: musicToggleIn 0.7s ease 0.35s both;
+      }
+
+      #music-toggle svg {
+        width: 26px;
+        height: 26px;
+        display: block;
+        fill: currentColor;
+        pointer-events: none;
+      }
+
+      #music-toggle .icon-muted {
+        display: none;
+      }
+
+      #music-toggle.is-muted .icon-on {
+        display: none;
+      }
+
+      #music-toggle.is-muted .icon-muted {
+        display: block;
+      }
+
+      #music-toggle:hover {
+        color: #fff8e0;
+        border-color: rgba(232, 206, 148, 0.98);
+        transform: translateY(-2px) scale(1.04);
+        box-shadow:
+          0 14px 34px rgba(0, 0, 0, 0.5),
+          0 0 34px rgba(212, 184, 118, 0.38),
+          inset 0 1px 0 rgba(255, 236, 190, 0.24);
+      }
+
+      #music-toggle:active {
+        transform: translateY(0) scale(0.98);
+      }
+
+      #music-toggle.is-muted {
+        color: rgba(210, 190, 150, 0.55);
+        border-color: rgba(160, 140, 100, 0.45);
+        box-shadow:
+          0 8px 20px rgba(0, 0, 0, 0.4),
+          inset 0 1px 0 rgba(255, 236, 190, 0.08);
+      }
+
+      #voice-toggle {
+        position: fixed;
+        top: 18px;
+        right: 82px;
+        z-index: 200;
+        width: 54px;
+        height: 54px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border-radius: 14px;
+        border: 2px solid rgba(212, 184, 118, 0.78);
+        background:
+          radial-gradient(circle at 30% 25%, rgba(255, 220, 150, 0.22), transparent 55%),
+          linear-gradient(145deg, rgba(48, 42, 28, 0.96), rgba(16, 14, 11, 0.94));
+        box-shadow:
+          0 10px 28px rgba(0, 0, 0, 0.45),
+          0 0 22px rgba(212, 184, 118, 0.22),
+          inset 0 1px 0 rgba(255, 236, 190, 0.18);
+        color: #f4e4b8;
+        cursor: pointer;
+        pointer-events: auto;
+        transition:
+          transform 0.2s ease,
+          border-color 0.2s ease,
+          box-shadow 0.2s ease,
+          color 0.2s ease;
+        animation: musicToggleIn 0.7s ease 0.45s both;
+      }
+
+      #voice-toggle svg {
+        width: 26px;
+        height: 26px;
+        display: block;
+        fill: currentColor;
+        pointer-events: none;
+      }
+
+      #voice-toggle .icon-muted {
+        display: none;
+      }
+
+      #voice-toggle.is-muted .icon-on {
+        display: none;
+      }
+
+      #voice-toggle.is-muted .icon-muted {
+        display: block;
+      }
+
+      #voice-toggle.is-listening {
+        border-color: rgba(120, 220, 160, 0.95);
+        color: #d8ffe8;
+        box-shadow:
+          0 10px 28px rgba(0, 0, 0, 0.45),
+          0 0 28px rgba(90, 220, 150, 0.45),
+          inset 0 1px 0 rgba(220, 255, 235, 0.2);
+        animation: voicePulse 1.2s ease-in-out infinite;
+      }
+
+      #voice-toggle:hover {
+        color: #fff8e0;
+        border-color: rgba(232, 206, 148, 0.98);
+        transform: translateY(-2px) scale(1.04);
+      }
+
+      #voice-toggle:active {
+        transform: translateY(0) scale(0.98);
+      }
+
+      #voice-toggle.is-muted {
+        color: rgba(210, 190, 150, 0.55);
+        border-color: rgba(160, 140, 100, 0.45);
+      }
+
+      @keyframes voicePulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+
+      @keyframes musicToggleIn {
+        from { opacity: 0; transform: translateY(-10px) scale(0.9); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      @media (max-width: 640px) {
+        #voice-toggle {
+          top: 12px;
+          right: 68px;
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+        }
+
+        #voice-toggle svg {
+          width: 22px;
+          height: 22px;
+        }
+
+        #music-toggle {
+          top: 12px;
+          right: 12px;
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+        }
+
+        #music-toggle svg {
+          width: 22px;
+          height: 22px;
+        }
+      }
     </style>
     <script type="importmap">
       {
@@ -489,6 +1064,40 @@
   </head>
   <body>
     <div id="app"></div>
+
+    <button
+      id="voice-toggle"
+      type="button"
+      aria-label="Mute voice"
+      title="Voice on/off"
+    >
+      <svg class="icon-on" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" />
+        <path d="M6 10v1a6 6 0 0 0 12 0v-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        <path d="M12 18v3M8 21h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      </svg>
+      <svg class="icon-muted" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" />
+        <path d="M4 4l16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+      </svg>
+    </button>
+
+    <button
+      id="music-toggle"
+      type="button"
+      aria-label="Mute music"
+      title="Music on/off"
+    >
+      <svg class="icon-on" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 10v4a1 1 0 0 0 1 1h2.6l3.7 3.1a1 1 0 0 0 1.6-.8V6.7a1 1 0 0 0-1.6-.8L6.6 9H4a1 1 0 0 0-1 1z" />
+        <path d="M15.4 8.6a4 4 0 0 1 0 6.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        <path d="M17.6 6.2a7 7 0 0 1 0 11.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      </svg>
+      <svg class="icon-muted" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 10v4a1 1 0 0 0 1 1h2.6l3.7 3.1a1 1 0 0 0 1.6-.8V6.7a1 1 0 0 0-1.6-.8L6.6 9H4a1 1 0 0 0-1 1z" />
+        <path d="M16 9.2l4.8 4.8M20.8 9.2L16 14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+      </svg>
+    </button>
 
     <div id="title-screen">
       <div class="title-stack">
@@ -502,10 +1111,6 @@
 
     <div id="panel">
       <div id="quiz-overlay">
-        <div id="quiz-left" class="quiz-left">
-          <p class="quiz-left-label">Your response</p>
-          <div id="choices" class="dialogue-choices"></div>
-        </div>
         <div id="quiz-right-anchor" class="quiz-right-anchor">
           <div id="game-screen" class="dialogue-card">
             <div class="dialogue-header">
@@ -519,6 +1124,36 @@
               <p id="dialogue" class="dialogue-text"></p>
             </div>
           </div>
+          <div id="quiz-response" class="quiz-response">
+            <p class="quiz-response-label">Your response</p>
+            <div id="intro-response" class="intro-response">
+              <textarea
+                id="user-intro-input"
+                rows="3"
+                placeholder="Introduce yourself briefly..."
+                maxlength="280"
+              ></textarea>
+              <button id="intro-next-btn" type="button" disabled>Next</button>
+            </div>
+            <div id="choices" class="dialogue-choices"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="analytics-overlay">
+        <div id="analytics-panel" class="analytics-panel">
+          <h2 id="analytics-title">Personality Analytics</h2>
+          <p id="analytics-subtitle" class="analytics-subtitle"></p>
+          <div class="analytics-hero">
+            <div id="analytics-dominant" class="analytics-dominant"></div>
+          </div>
+          <div id="analytics-traits" class="analytics-traits"></div>
+          <div id="analytics-feedback" class="analytics-section analytics-feedback-section"></div>
+          <div id="analytics-insights" class="analytics-insights-row">
+            <div id="analytics-workplace" class="analytics-insight-col"></div>
+            <div id="analytics-growth" class="analytics-insight-col"></div>
+          </div>
+          <button id="analytics-finish-btn" class="choice-btn" type="button">Play Again</button>
         </div>
       </div>
 
@@ -531,6 +1166,6 @@
       </div>
     </div>
     <div id="status">Loading model...</div>
-    <script type="module" src="./index.js?v=24"></script>
+    <script type="module" src="./index.js?v=42"></script>
   </body>
 </html>
