@@ -203,6 +203,8 @@ const SpeechRecognitionCtor =
 
 let voiceEnabled = true;
 let speechNpcId = null;
+let speechToken = 0;
+let speechKeepAliveId = null;
 let voiceCommandActive = false;
 let isListening = false;
 let introSpeechBase = "";
@@ -243,7 +245,33 @@ function restoreMusicAfterSpeech() {
   musicDucked = false;
 }
 
+function clearSpeechKeepAlive() {
+  if (speechKeepAliveId) {
+    window.clearInterval(speechKeepAliveId);
+    speechKeepAliveId = null;
+  }
+}
+
+function startSpeechKeepAlive() {
+  clearSpeechKeepAlive();
+  // Chrome pauses long utterances; nudge resume while speech is still active.
+  speechKeepAliveId = window.setInterval(() => {
+    if (!window.speechSynthesis) {
+      clearSpeechKeepAlive();
+      return;
+    }
+    if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+      window.speechSynthesis.pause();
+      window.speechSynthesis.resume();
+    } else if (!isSpeechActive()) {
+      clearSpeechKeepAlive();
+    }
+  }, 9000);
+}
+
 function stopSpeaking() {
+  speechToken += 1;
+  clearSpeechKeepAlive();
   if (window.speechSynthesis) {
     window.speechSynthesis.cancel();
   }
@@ -260,9 +288,12 @@ function speakText(text, { npcId = null, onEnd = null, rate = 0.94, pitch = 1 } 
     return;
   }
 
+  const lipNpc = npcId || activeSpeakerNpc || null;
+
   stopSpeaking();
   duckMusicForSpeech();
 
+  const token = speechToken;
   const utterance = new SpeechSynthesisUtterance(text.trim());
   utterance.rate = rate;
   utterance.pitch = pitch;
@@ -271,23 +302,59 @@ function speakText(text, { npcId = null, onEnd = null, rate = 0.94, pitch = 1 } 
   const preferredVoice = getPreferredVoice();
   if (preferredVoice) utterance.voice = preferredVoice;
 
-  if (npcId) {
-    speechNpcId = npcId;
-    setLipSpeaking(npcId, true);
+  if (lipNpc) {
+    speechNpcId = lipNpc;
+    setLipSpeaking(lipNpc, true);
   }
 
-  const cleanup = () => {
+  let finished = false;
+  let waitForIdleId = null;
+
+  const finalize = () => {
+    if (token !== speechToken || finished) return;
+    finished = true;
+    if (waitForIdleId) {
+      window.clearInterval(waitForIdleId);
+      waitForIdleId = null;
+    }
+    clearSpeechKeepAlive();
     restoreMusicAfterSpeech();
-    if (speechNpcId === npcId) {
-      setLipSpeaking(npcId, false);
+    if (speechNpcId === lipNpc) {
+      setLipSpeaking(lipNpc, false);
       speechNpcId = null;
     }
     onEnd?.();
   };
 
+  const cleanup = (event) => {
+    if (token !== speechToken || finished) return;
+
+    // Chrome can fire a bogus early "end" while speech is still queued/playing.
+    if (event?.type === "end" && isSpeechActive()) {
+      if (waitForIdleId) return;
+      waitForIdleId = window.setInterval(() => {
+        if (token !== speechToken) {
+          window.clearInterval(waitForIdleId);
+          waitForIdleId = null;
+          return;
+        }
+        if (!isSpeechActive()) finalize();
+      }, 120);
+      return;
+    }
+
+    finalize();
+  };
+
   utterance.onend = cleanup;
   utterance.onerror = cleanup;
-  window.speechSynthesis.speak(utterance);
+
+  // Let cancel() settle before speaking — avoids Chrome killing the new utterance.
+  window.setTimeout(() => {
+    if (token !== speechToken) return;
+    window.speechSynthesis.speak(utterance);
+    startSpeechKeepAlive();
+  }, 40);
 }
 
 function syncVoiceToggleUi() {
@@ -583,7 +650,10 @@ function speakResponsePrompt() {
 
   const hint = getResponseVoiceHint();
   const prompt = hint ? `Your response. ${hint}` : "Your response.";
-  speakText(prompt, { onEnd: () => startVoiceCommands() });
+  speakText(prompt, {
+    npcId: activeSpeakerNpc || "manager",
+    onEnd: () => startVoiceCommands(),
+  });
 }
 
 function setVoiceEnabled(enabled) {
@@ -602,7 +672,7 @@ if (window.speechSynthesis) {
 }
 
 const MANAGER_INTRO_TEXT =
-  "Hello! I'm Hanif Butt, manager of this company. Welcome aboard - before we jump into a few workplace scenarios, I'd love a quick intro from you.";
+  "Hello! I'm Sohail Ahmed, manager of this company. Welcome aboard - before we jump into a few workplace scenarios, I'd love a quick intro from you.";
 const MANAGER_READY_TEXT = "Are you ready for doing the test?";
 const MANAGER_COMPLETION_TEXT =
   "Congratulations! You have successfully completed the assessment. Please select the button below to review your detailed personality analytics and results.";
@@ -1268,11 +1338,11 @@ function updateLipSync(delta) {
         target.mesh.morphTargetInfluences[target.index] = THREE.MathUtils.lerp(
           target.mesh.morphTargetInfluences[target.index],
           0,
-          0.2
+          0.25
         );
       }
       if (controller.jawBone) {
-        controller.jawBone.rotation.x = THREE.MathUtils.lerp(controller.jawBone.rotation.x, controller.jawBaseX, 0.2);
+        controller.jawBone.rotation.x = THREE.MathUtils.lerp(controller.jawBone.rotation.x, controller.jawBaseX, 0.25);
       }
       continue;
     }
@@ -1687,7 +1757,8 @@ function stopTypewriter() {
 
 function finishTypewriter(lipNpc) {
   dialogue.querySelector(".cursor")?.remove();
-  if (!isSpeechActive()) {
+  // Keep mouth moving while TTS is still playing; speakText cleanup stops it when done.
+  if (!isSpeechActive() && speechNpcId !== lipNpc) {
     setLipSpeaking(lipNpc, false);
   }
 
@@ -2315,8 +2386,9 @@ function nudgeOfficeLaptopAwayFromChair(model) {
     return;
   }
 
-  // Chair sits at lower Z; desk/camera at higher Z — nudge laptop +Z toward the viewer.
+  // +Z = toward viewer; -X = screen-left (looking at manager).
   laptop.position.z += 0.22;
+  laptop.position.x = 0.08;
   laptop.updateMatrixWorld(true);
 }
 
@@ -2625,8 +2697,9 @@ function animate() {
       updateIntroCinematic(delta);
     }
 
-    updateLipSync(delta);
+    // Mixer first, then lip sync — otherwise idle FBX face tracks overwrite the mouth.
     updateNpcAnimators(delta);
+    updateLipSync(delta);
     updateDialoguePanelPosition();
   }
 
