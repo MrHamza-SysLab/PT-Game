@@ -59,8 +59,25 @@ const MUSIC = {
   resultBg: "./assets/sounds/result_bg.mp3",
 };
 
+const VOICE = {
+  managerGreeting: "./assets/voice/Manager Greeting.mp3",
+  readyConfirmation: "./assets/voice/Ready Confirmation.mp3",
+  completion: "./assets/voice/Completion.mp3",
+  openness: "./assets/voice/Openness.mp3",
+  conscientiousness: "./assets/voice/Conscientiousness.mp3",
+  extraversion: "./assets/voice/Extraversion.mp3",
+  agreeableness: "./assets/voice/Agreeableness.mp3",
+  neuroticism: "./assets/voice/Neuroticism.mp3",
+  yourResponse: "./assets/voice/Your response.mp3",
+  option1: "./assets/voice/Option1.mp3",
+  option2: "./assets/voice/Option2.mp3",
+};
+
 const musicPlayers = {};
+const voicePlayers = {};
 let activeMusicKey = null;
+let activeVoicePlayer = null;
+let voicePlaying = false;
 let musicEnabled = true;
 let musicUnlocked = false;
 
@@ -204,7 +221,6 @@ const SpeechRecognitionCtor =
 let voiceEnabled = true;
 let speechNpcId = null;
 let speechToken = 0;
-let speechKeepAliveId = null;
 let voiceCommandActive = false;
 let isListening = false;
 let introSpeechBase = "";
@@ -212,15 +228,7 @@ let speechRecognition = null;
 let musicDucked = false;
 
 function isSpeechActive() {
-  return Boolean(window.speechSynthesis?.speaking || window.speechSynthesis?.pending);
-}
-
-function getPreferredVoice() {
-  const voices = window.speechSynthesis?.getVoices() || [];
-  return (
-    voices.find((v) => v.lang.startsWith("en") && /male|david|mark|google us english/i.test(v.name)) ||
-    voices.find((v) => v.lang.startsWith("en"))
-  );
+  return voicePlaying;
 }
 
 function duckMusicForSpeech() {
@@ -245,36 +253,31 @@ function restoreMusicAfterSpeech() {
   musicDucked = false;
 }
 
-function clearSpeechKeepAlive() {
-  if (speechKeepAliveId) {
-    window.clearInterval(speechKeepAliveId);
-    speechKeepAliveId = null;
+function getVoicePlayer(key) {
+  if (!VOICE[key]) return null;
+  if (!voicePlayers[key]) {
+    const player = new Audio(VOICE[key]);
+    player.preload = "auto";
+    player.volume = 1;
+    voicePlayers[key] = player;
   }
+  return voicePlayers[key];
 }
 
-function startSpeechKeepAlive() {
-  clearSpeechKeepAlive();
-  // Chrome pauses long utterances; nudge resume while speech is still active.
-  speechKeepAliveId = window.setInterval(() => {
-    if (!window.speechSynthesis) {
-      clearSpeechKeepAlive();
-      return;
-    }
-    if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-      window.speechSynthesis.pause();
-      window.speechSynthesis.resume();
-    } else if (!isSpeechActive()) {
-      clearSpeechKeepAlive();
-    }
-  }, 9000);
+function stopVoiceClip() {
+  if (activeVoicePlayer) {
+    activeVoicePlayer.onended = null;
+    activeVoicePlayer.onerror = null;
+    activeVoicePlayer.pause();
+    activeVoicePlayer.currentTime = 0;
+    activeVoicePlayer = null;
+  }
+  voicePlaying = false;
 }
 
 function stopSpeaking() {
   speechToken += 1;
-  clearSpeechKeepAlive();
-  if (window.speechSynthesis) {
-    window.speechSynthesis.cancel();
-  }
+  stopVoiceClip();
   restoreMusicAfterSpeech();
   if (speechNpcId) {
     setLipSpeaking(speechNpcId, false);
@@ -282,42 +285,33 @@ function stopSpeaking() {
   }
 }
 
-function speakText(text, { npcId = null, onEnd = null, rate = 0.94, pitch = 1 } = {}) {
-  if (!voiceEnabled || !text?.trim() || !window.speechSynthesis) {
+function speakText(text, { npcId = null, onEnd = null, voiceKey = null } = {}) {
+  const key = voiceKey || null;
+  if (!voiceEnabled || !key || !VOICE[key]) {
     onEnd?.();
     return;
   }
 
   const lipNpc = npcId || activeSpeakerNpc || null;
+  const player = getVoicePlayer(key);
+  if (!player) {
+    onEnd?.();
+    return;
+  }
 
   stopSpeaking();
   duckMusicForSpeech();
 
   const token = speechToken;
-  const utterance = new SpeechSynthesisUtterance(text.trim());
-  utterance.rate = rate;
-  utterance.pitch = pitch;
-  utterance.lang = "en-US";
-
-  const preferredVoice = getPreferredVoice();
-  if (preferredVoice) utterance.voice = preferredVoice;
-
-  if (lipNpc) {
-    speechNpcId = lipNpc;
-    setLipSpeaking(lipNpc, true);
-  }
-
   let finished = false;
-  let waitForIdleId = null;
 
   const finalize = () => {
     if (token !== speechToken || finished) return;
     finished = true;
-    if (waitForIdleId) {
-      window.clearInterval(waitForIdleId);
-      waitForIdleId = null;
+    voicePlaying = false;
+    if (activeVoicePlayer === player) {
+      activeVoicePlayer = null;
     }
-    clearSpeechKeepAlive();
     restoreMusicAfterSpeech();
     if (speechNpcId === lipNpc) {
       setLipSpeaking(lipNpc, false);
@@ -326,35 +320,22 @@ function speakText(text, { npcId = null, onEnd = null, rate = 0.94, pitch = 1 } 
     onEnd?.();
   };
 
-  const cleanup = (event) => {
-    if (token !== speechToken || finished) return;
+  if (lipNpc) {
+    speechNpcId = lipNpc;
+    setLipSpeaking(lipNpc, true);
+  }
 
-    // Chrome can fire a bogus early "end" while speech is still queued/playing.
-    if (event?.type === "end" && isSpeechActive()) {
-      if (waitForIdleId) return;
-      waitForIdleId = window.setInterval(() => {
-        if (token !== speechToken) {
-          window.clearInterval(waitForIdleId);
-          waitForIdleId = null;
-          return;
-        }
-        if (!isSpeechActive()) finalize();
-      }, 120);
-      return;
-    }
+  player.onended = finalize;
+  player.onerror = finalize;
+  player.currentTime = 0;
+  activeVoicePlayer = player;
+  voicePlaying = true;
 
+  player.play().then(() => {
+    musicUnlocked = true;
+  }).catch(() => {
     finalize();
-  };
-
-  utterance.onend = cleanup;
-  utterance.onerror = cleanup;
-
-  // Let cancel() settle before speaking — avoids Chrome killing the new utterance.
-  window.setTimeout(() => {
-    if (token !== speechToken) return;
-    window.speechSynthesis.speak(utterance);
-    startSpeechKeepAlive();
-  }, 40);
+  });
 }
 
 function syncVoiceToggleUi() {
@@ -512,12 +493,22 @@ function handleChoiceSpeech(transcript) {
   if (!match) return;
 
   stopVoiceCommands();
-  const label = match.textContent.trim();
-  speakText(`You selected ${label}.`, {
-    onEnd: () => {
-      match.click();
-    },
-  });
+  const buttons = getChoiceButtons();
+  const choiceIndex = buttons.indexOf(match);
+  const voiceKey =
+    choiceIndex === 0 ? "option1" : choiceIndex === 1 ? "option2" : null;
+
+  if (voiceKey) {
+    speakText("", {
+      voiceKey,
+      onEnd: () => {
+        match.click();
+      },
+    });
+    return;
+  }
+
+  match.click();
 }
 
 function initSpeechRecognition() {
@@ -648,9 +639,14 @@ function getResponseVoiceHint() {
 function speakResponsePrompt() {
   if (!voiceEnabled) return;
 
-  const hint = getResponseVoiceHint();
-  const prompt = hint ? `Your response. ${hint}` : "Your response.";
-  speakText(prompt, {
+  // Skip "Your response" clip on manager greeting / user-intro screen.
+  if (state.conversationPhase === "user-intro") {
+    startVoiceCommands();
+    return;
+  }
+
+  speakText("", {
+    voiceKey: "yourResponse",
     npcId: activeSpeakerNpc || "manager",
     onEnd: () => startVoiceCommands(),
   });
@@ -663,12 +659,6 @@ function setVoiceEnabled(enabled) {
     stopVoiceCommands();
     stopSpeaking();
   }
-}
-
-if (window.speechSynthesis) {
-  window.speechSynthesis.onvoiceschanged = () => {
-    getPreferredVoice();
-  };
 }
 
 const MANAGER_INTRO_TEXT =
@@ -1124,7 +1114,7 @@ function startManagerGreeting() {
     state.conversationPhase = "user-intro";
     setIntroResponseVisible(true);
     showResponsePanel();
-  });
+  }, "managerGreeting");
 }
 
 function submitUserIntro() {
@@ -1150,7 +1140,13 @@ function startReadyConfirmation() {
   showQuizOverlay();
   updateDialoguePanelPosition();
   dialogue.textContent = "";
-  startTypewriter(MANAGER_READY_TEXT, "Manager", "manager", showReadyChoices);
+  startTypewriter(
+    MANAGER_READY_TEXT,
+    "Manager",
+    "manager",
+    showReadyChoices,
+    "readyConfirmation"
+  );
 }
 
 function showReadyChoices() {
@@ -1190,7 +1186,13 @@ function startCompletionGreeting() {
   showQuizOverlay();
   updateDialoguePanelPosition();
   dialogue.textContent = "";
-  startTypewriter(MANAGER_COMPLETION_TEXT, "Manager", "manager", showCompletionAction);
+  startTypewriter(
+    MANAGER_COMPLETION_TEXT,
+    "Manager",
+    "manager",
+    showCompletionAction,
+    "completion"
+  );
 }
 
 function showCompletionAction() {
@@ -1757,7 +1759,7 @@ function stopTypewriter() {
 
 function finishTypewriter(lipNpc) {
   dialogue.querySelector(".cursor")?.remove();
-  // Keep mouth moving while TTS is still playing; speakText cleanup stops it when done.
+  // Keep mouth moving while voice clip is still playing; speakText cleanup stops it when done.
   if (!isSpeechActive() && speechNpcId !== lipNpc) {
     setLipSpeaking(lipNpc, false);
   }
@@ -1767,7 +1769,7 @@ function finishTypewriter(lipNpc) {
   onComplete?.();
 }
 
-function startTypewriter(text, speaker, npcId, onComplete) {
+function startTypewriter(text, speaker, npcId, onComplete, voiceKey = null) {
   stopTypewriter();
   typewriterCompleteCallback = onComplete;
 
@@ -1781,7 +1783,7 @@ function startTypewriter(text, speaker, npcId, onComplete) {
   }
 
   let typewriterDone = false;
-  let speechDone = !voiceEnabled || !window.speechSynthesis;
+  let speechDone = !voiceEnabled || !voiceKey || !VOICE[voiceKey];
 
   const tryFinishTypewriter = () => {
     if (!typewriterDone || !speechDone) return;
@@ -1789,9 +1791,10 @@ function startTypewriter(text, speaker, npcId, onComplete) {
   };
 
   setLipSpeaking(lipNpc, true);
-  if (voiceEnabled && window.speechSynthesis) {
+  if (voiceEnabled && voiceKey && VOICE[voiceKey]) {
     speakText(message, {
       npcId: lipNpc,
+      voiceKey,
       onEnd: () => {
         speechDone = true;
         tryFinishTypewriter();
@@ -2215,7 +2218,13 @@ function renderQuestion(index) {
   showQuizOverlay();
   updateDialoguePanelPosition();
   dialogue.textContent = "";
-  startTypewriter(scenario.question, "Manager", "manager", showResponsePanel);
+  startTypewriter(
+    scenario.question,
+    "Manager",
+    "manager",
+    showResponsePanel,
+    scenario.factor.toLowerCase()
+  );
 }
 
 function applyWorldBounds(box) {

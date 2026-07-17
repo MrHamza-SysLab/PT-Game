@@ -5,14 +5,38 @@ const HARRY_GLB = "./assets/ready_player_me_harry_potter.glb";
 const MEETING_FBX = "./assets/meeting.fbx";
 
 const MANAGER_DIALOGUES = [
-  "Hello! I'm Hanif Butt, manager of this company. Welcome aboard - before we jump into a few workplace scenarios, I'd love a quick intro from you.",
-  "Are you ready for doing the test?",
-  "A new AI-driven tool has been introduced for your workflow. How do you respond?",
-  "The deadline is tomorrow, and you still have tasks pending. What is your approach?",
-  "You are at a large company networking event. Where do you find yourself?",
-  "A team member strongly disagrees with your project plan. What do you do?",
-  "A critical system error occurs right before a client demo. What is your reaction?",
-  "Congratulations! You have successfully completed the assessment. Please select the button below to review your detailed personality analytics and results.",
+  {
+    text: "Hello! I'm Hanif Butt, manager of this company. Welcome aboard - before we jump into a few workplace scenarios, I'd love a quick intro from you.",
+    voiceKey: "managerGreeting",
+  },
+  {
+    text: "Are you ready for doing the test?",
+    voiceKey: "readyConfirmation",
+  },
+  {
+    text: "A new AI-driven tool has been introduced for your workflow. How do you respond?",
+    voiceKey: "openness",
+  },
+  {
+    text: "The deadline is tomorrow, and you still have tasks pending. What is your approach?",
+    voiceKey: "conscientiousness",
+  },
+  {
+    text: "You are at a large company networking event. Where do you find yourself?",
+    voiceKey: "extraversion",
+  },
+  {
+    text: "A team member strongly disagrees with your project plan. What do you do?",
+    voiceKey: "agreeableness",
+  },
+  {
+    text: "A critical system error occurs right before a client demo. What is your reaction?",
+    voiceKey: "neuroticism",
+  },
+  {
+    text: "Congratulations! You have successfully completed the assessment. Please select the button below to review your detailed personality analytics and results.",
+    voiceKey: "completion",
+  },
 ];
 
 let deps = null;
@@ -237,14 +261,13 @@ function speakNextDialogue() {
     return;
   }
 
-  const text = MANAGER_DIALOGUES[dialogueIndex];
+  const line = MANAGER_DIALOGUES[dialogueIndex];
   speechBusy = true;
-  setSubtitle(text, { current: dialogueIndex + 1, total: MANAGER_DIALOGUES.length });
+  setSubtitle(line.text, { current: dialogueIndex + 1, total: MANAGER_DIALOGUES.length });
 
-  deps.speakText(text, {
+  deps.speakText(line.text, {
     npcId: null,
-    rate: 0.92,
-    pitch: 1.02,
+    voiceKey: line.voiceKey,
     onEnd: () => {
       speechBusy = false;
       if (!active) return;
