@@ -639,8 +639,11 @@ function getResponseVoiceHint() {
 function speakResponsePrompt() {
   if (!voiceEnabled) return;
 
-  // Skip "Your response" clip on manager greeting / user-intro screen.
-  if (state.conversationPhase === "user-intro") {
+  // Skip "Your response" clip on intro and completion screens.
+  if (
+    state.conversationPhase === "user-intro" ||
+    state.conversationPhase === "completion"
+  ) {
     startVoiceCommands();
     return;
   }
